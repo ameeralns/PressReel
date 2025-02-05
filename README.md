@@ -28,6 +28,7 @@ pod install
 This repository contains sensitive configuration files that should not be committed:
 
 - `GoogleService-Info.plist`: Contains Firebase API keys and configuration
+- `Config.xcconfig`: Contains OpenAI API key
 - Any `.env` files: Environment variables and secrets
 
 These files are included in `.gitignore` and should be kept secure. Use the template files as reference for setting up your local development environment.
@@ -47,6 +48,10 @@ These files are included in `.gitignore` and should be kept secure. Use the temp
 2. Configure your Firebase credentials:
    - Copy `GoogleService-Info.sample.plist` to `GoogleService-Info.plist`
    - Replace the placeholder values with your actual Firebase configuration
+3. Configure OpenAI credentials:
+   - Copy `Config.template.xcconfig` to `Config.xcconfig`
+   - Replace `your_openai_api_key_here` with your actual OpenAI API key
+   - In Xcode, set the configuration file in your target's build settings
 
 ## Development
 
