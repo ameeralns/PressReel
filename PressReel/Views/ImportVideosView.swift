@@ -377,7 +377,7 @@ struct VideoThumbnail: View {
     @State private var isLoading = true
     
     var body: some View {
-        Group {
+        ZStack {
             if isLoading {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
@@ -393,24 +393,7 @@ struct VideoThumbnail: View {
                     .foregroundColor(.gray)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-        )
-        .overlay(
-            Text(formatDuration(video.duration))
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(Color.black.opacity(0.7))
-                .cornerRadius(4)
-                .padding(4),
-            alignment: .bottomTrailing
-        )
+        .background(Color.black.opacity(0.2))
         .onAppear {
             loadThumbnail()
         }
@@ -435,12 +418,6 @@ struct VideoThumbnail: View {
                 }
             }
         }
-    }
-    
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 
@@ -666,8 +643,8 @@ struct VideoGridView: View {
     @Binding var isSelectionMode: Bool
     @Binding var selectedVideos: Set<UUID>
     
+    // Update to 3 columns with consistent spacing
     let columns = [
-        GridItem(.flexible(), spacing: 1),
         GridItem(.flexible(), spacing: 1),
         GridItem(.flexible(), spacing: 1),
         GridItem(.flexible(), spacing: 1)
@@ -684,12 +661,14 @@ struct VideoGridView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                LazyVGrid(columns: columns, spacing: 1) {
-                    ForEach(videos) { video in
-                        ZStack(alignment: .topLeading) {
-                            VideoThumbnail(video: video)
-                                .frame(height: (UIScreen.main.bounds.width / 4) - 0.75)
-                                .onTapGesture {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 1) {
+                        ForEach(videos) { video in
+                            VideoThumbnailCell(
+                                video: video,
+                                isSelectionMode: isSelectionMode,
+                                isSelected: selectedVideos.contains(video.id),
+                                onTap: {
                                     if isSelectionMode {
                                         if selectedVideos.contains(video.id) {
                                             selectedVideos.remove(video.id)
@@ -700,42 +679,100 @@ struct VideoGridView: View {
                                         selectedVideo = video
                                         isShowingVideoPlayer = true
                                     }
+                                },
+                                onDelete: {
+                                    importManager.deleteVideo(video)
                                 }
-                            
-                            if isSelectionMode {
-                                ZStack {
-                                    Circle()
-                                        .strokeBorder(Color.white, lineWidth: 2)
-                                        .background(
-                                            Circle()
-                                                .fill(selectedVideos.contains(video.id) ? Color.red : Color.clear)
-                                        )
-                                        .frame(width: 24, height: 24)
-                                    
-                                    if selectedVideos.contains(video.id) {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                                .padding(8)
-                            }
-                        }
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                importManager.deleteVideo(video)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
+                            )
                         }
                     }
+                    .padding(.horizontal, 0)
                 }
-                .padding(.horizontal, 0)
             }
         }
         .sheet(isPresented: $isShowingVideoPlayer) {
             if let video = selectedVideo {
                 VideoPlayerView(video: video)
+            }
+        }
+    }
+}
+
+struct VideoThumbnailCell: View {
+    let video: ImportedVideo
+    let isSelectionMode: Bool
+    let isSelected: Bool
+    let onTap: () -> Void
+    let onDelete: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            ZStack(alignment: .topLeading) {
+                VideoThumbnail(video: video)
+                    .aspectRatio(1, contentMode: .fill) // Make it square
+                    .frame(height: UIScreen.main.bounds.width / 3) // Exact square size
+                    .clipped()
+                    .overlay(
+                        ZStack(alignment: .bottomLeading) {
+                            // Gradient overlay for better text visibility
+                            LinearGradient(
+                                gradient: Gradient(colors: [.black.opacity(0.5), .clear]),
+                                startPoint: .bottom,
+                                endPoint: .center
+                            )
+                            
+                            // Duration label
+                            HStack {
+                                Image(systemName: "video.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.white)
+                                Text(formatDuration(video.duration))
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .padding(.bottom, 4)
+                        }
+                    )
+                
+                if isSelectionMode {
+                    SelectionCheckmark(isSelected: isSelected)
+                        .padding(6)
+                }
+            }
+        }
+        .contextMenu {
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+struct SelectionCheckmark: View {
+    let isSelected: Bool
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(isSelected ? Color.red : Color.black.opacity(0.4))
+                .frame(width: 22, height: 22)
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.white, lineWidth: 1.5)
+                )
+            
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
             }
         }
     }
