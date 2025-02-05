@@ -86,4 +86,4 @@ Carthage/Build/
 .idea/
 *.moved-aside
 *.xccheckout
-*.xcscmblueprint 
+*.xcscmblueprint Config.xcconfig

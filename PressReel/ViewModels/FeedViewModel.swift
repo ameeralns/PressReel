@@ -4,6 +4,8 @@ import FirebaseFirestore
 import FirebaseAuth
 
 class FeedViewModel: ObservableObject {
+    private let openAIService = OpenAIService()
+    private let scriptService = ScriptService()
     @Published var newsItems: [NewsItem] = []
     @Published var isLoading = false
     @Published var error: Error?
@@ -176,5 +178,24 @@ class FeedViewModel: ObservableObject {
         Task {
             await refreshFeed()
         }
+    }
+    
+    func generateScript(for item: NewsItem) async throws -> Script {
+        let script = try await openAIService.generateScript(from: item)
+        
+        let newScript = Script(
+            id: UUID().uuidString,
+            userId: userId,
+            newsItemId: item.id,
+            content: script,
+            createdAt: Date(),
+            title: "Script for: \(item.title)",
+            duration: 60,
+            articleTitle: item.title,
+            articleUrl: item.url
+        )
+        
+        try await scriptService.saveScript(newScript)
+        return newScript
     }
 } 

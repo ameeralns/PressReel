@@ -120,6 +120,7 @@ struct FeedView: View {
                             // News Feed
                             ForEach(viewModel.newsItems) { item in
                                 NewsItemCard(
+                                    viewModel: viewModel,
                                     item: item,
                                     isLiked: item.userInteractions[viewModel.userId]?["isLiked"] as? Bool ?? false,
                                     isSaved: item.userInteractions[viewModel.userId]?["isSaved"] as? Bool ?? false,
@@ -170,6 +171,10 @@ struct FeedView: View {
 }
 
 struct NewsItemCard: View {
+    @ObservedObject var viewModel: FeedViewModel
+    @State private var isGeneratingScript = false
+    @State private var showScriptGenerationError = false
+    @State private var scriptGenerationError: String? = nil
     let item: NewsItem
     let isLiked: Bool
     let isSaved: Bool
@@ -280,6 +285,32 @@ struct NewsItemCard: View {
                     
                     ShareLink(item: URL(string: item.url)!) {
                         Image(systemName: "square.and.arrow.up")
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    
+                    Menu {
+                        Button(action: {
+                            Task {
+                                isGeneratingScript = true
+                                do {
+                                    try await viewModel.generateScript(for: item)
+                                    isGeneratingScript = false
+                                } catch {
+                                    scriptGenerationError = error.localizedDescription
+                                    showScriptGenerationError = true
+                                    isGeneratingScript = false
+                                }
+                            }
+                        }) {
+                            if isGeneratingScript {
+                                Label("Generating...", systemImage: "hourglass")
+                            } else {
+                                Label("Generate Script", systemImage: "doc.text")
+                            }
+                        }
+                        .disabled(isGeneratingScript)
+                    } label: {
+                        Image(systemName: "ellipsis")
                             .foregroundColor(.white.opacity(0.6))
                     }
                 }

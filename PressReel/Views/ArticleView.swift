@@ -4,6 +4,10 @@ import Firebase
 import FirebaseFirestore
 
 struct ArticleView: View {
+    @StateObject private var viewModel: FeedViewModel
+    @State private var isGeneratingScript = false
+    @State private var scriptGenerated = false
+    @State private var generatedScript: Script?
     let item: NewsItem
     let userId: String
     @Environment(\.dismiss) private var dismiss
@@ -12,6 +16,7 @@ struct ArticleView: View {
     @State private var isSaved: Bool
     
     init(item: NewsItem, userId: String) {
+        _viewModel = StateObject(wrappedValue: FeedViewModel(userId: userId))
         self.item = item
         self.userId = userId
         _isLiked = State(initialValue: item.userInteractions[userId]?["isLiked"] as? Bool ?? false)
@@ -131,15 +136,55 @@ struct ArticleView: View {
                     }
                     .padding(.top, 8)
                     
-                    // Read Full Article Button
-                    Button(action: { showWebView = true }) {
-                        Text("Read Full Article")
-                            .font(.headline)
+                    // Action Buttons
+                    HStack(spacing: 12) {
+                        // Read Full Article Button
+                        Button(action: { showWebView = true }) {
+                            Text("Read Full Article")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.red)
+                                .cornerRadius(12)
+                        }
+                        
+                        // Generate Script Button
+                        Button(action: {
+                            if !scriptGenerated {
+                                Task {
+                                    isGeneratingScript = true
+                                    do {
+                                        let script = try await viewModel.generateScript(for: item)
+                                        scriptGenerated = true
+                                        generatedScript = script
+                                    } catch {
+                                        print("Error generating script: \(error)")
+                                    }
+                                    isGeneratingScript = false
+                                }
+                            }
+                        }) {
+                            Group {
+                                if isGeneratingScript {
+                                    ProgressView()
+                                        .tint(.white)
+                                } else if scriptGenerated {
+                                    Image(systemName: "checkmark")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                } else {
+                                    Image(systemName: "doc.text")
+                                        .font(.headline)
+                                }
+                            }
                             .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
+                            .frame(width: 50)
                             .padding()
-                            .background(Color.red)
+                            .background(scriptGenerated ? Color.green : Color.red)
                             .cornerRadius(12)
+                        }
+                        .disabled(isGeneratingScript || scriptGenerated)
                     }
                     .padding(.top, 16)
                 }
@@ -154,6 +199,11 @@ struct ArticleView: View {
                     Image(systemName: "square.and.arrow.up")
                         .foregroundColor(.white)
                 }
+            }
+        }
+        .sheet(item: $generatedScript) { script in
+            NavigationView {
+                ScriptView(script: script)
             }
         }
         .sheet(isPresented: $showWebView) {

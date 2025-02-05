@@ -725,6 +725,7 @@ struct ProfileView: View {
     @Binding var isPresented: Bool
     @StateObject private var authService = AuthenticationService()
     @State private var showError = false
+    @State private var showScripts = false
     
     var body: some View {
         NavigationView {
@@ -753,6 +754,26 @@ struct ProfileView: View {
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.7))
                     }
+                    
+                    Spacer()
+                    
+                    // Scripts Button
+                    Button(action: { showScripts = true }) {
+                        HStack {
+                            Image(systemName: "doc.text")
+                            Text("My Scripts")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                        .foregroundColor(.white)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.white.opacity(0.05))
+                        )
+                    }
+                    .padding(.horizontal)
                     
                     Spacer()
                     
@@ -786,6 +807,9 @@ struct ProfileView: View {
                 isPresented = false
             }
             .foregroundColor(.white))
+            .fullScreenCover(isPresented: $showScripts) {
+                ScriptsListView(userId: authService.user?.uid ?? "")
+            }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
