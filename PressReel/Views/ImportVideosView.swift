@@ -450,6 +450,8 @@ struct ImportVideosView: View {
     @State private var showingPhotoPicker = false
     @State private var showingError = false
     @State private var errorMessage = ""
+    @State private var isSelectionMode = false
+    @State private var selectedVideos = Set<UUID>()
     
     var body: some View {
         NavigationStack {
@@ -466,18 +468,60 @@ struct ImportVideosView: View {
                         if importManager.isLoading {
                             UploadProgressView(progress: importManager.uploadProgress)
                         } else {
-                            VideoGridView(videos: importManager.selectedVideos, importManager: importManager)
-                                .padding(.top, 16)
-                                .onAppear {
-                                    print("VideoGridView appeared, refreshing videos")
-                                    importManager.loadSavedVideos()
-                                }
+                            VideoGridView(
+                                videos: importManager.selectedVideos,
+                                importManager: importManager,
+                                isSelectionMode: $isSelectionMode,
+                                selectedVideos: $selectedVideos
+                            )
+                            .padding(.top, 16)
+                            .onAppear {
+                                print("VideoGridView appeared, refreshing videos")
+                                importManager.loadSavedVideos()
+                            }
                         }
                     }
                 }
                 .refreshable {
                     print("Manual refresh triggered")
                     importManager.loadSavedVideos()
+                }
+                
+                // Bottom Bar
+                if isSelectionMode {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Button(action: {
+                                isSelectionMode = false
+                                selectedVideos.removeAll()
+                            }) {
+                                Text("Cancel")
+                                    .font(.system(size: 17))
+                                    .foregroundColor(.white)
+                            }
+                            
+                            Spacer()
+                            
+                            if !selectedVideos.isEmpty {
+                                Button(action: {
+                                    // Handle next action
+                                }) {
+                                    Text("Next")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundColor(.red)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                        .background(
+                            Rectangle()
+                                .fill(Color.black)
+                                .edgesIgnoringSafeArea(.bottom)
+                                .shadow(color: .black.opacity(0.2), radius: 10, y: -5)
+                        )
+                    }
                 }
             }
             .navigationTitle("Your Videos")
@@ -486,18 +530,30 @@ struct ImportVideosView: View {
             .toolbarBackground(Color.black, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        Text("Done")
-                            .font(.system(size: 17, weight: .regular))
-                            .foregroundColor(.white)
+                    if !isSelectionMode {
+                        Button(action: { dismiss() }) {
+                            Text("Done")
+                                .font(.system(size: 17, weight: .regular))
+                                .foregroundColor(.white)
+                        }
                     }
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingPhotoPicker = true }) {
-                        Image(systemName: "plus")
-                            .foregroundColor(.red)
-                            .font(.system(size: 17, weight: .semibold))
+                    if !isSelectionMode {
+                        HStack {
+                            Button(action: { isSelectionMode = true }) {
+                                Text("Select")
+                                    .font(.system(size: 17))
+                                    .foregroundColor(.red)
+                            }
+                            
+                            Button(action: { showingPhotoPicker = true }) {
+                                Image(systemName: "plus")
+                                    .foregroundColor(.red)
+                                    .font(.system(size: 17, weight: .semibold))
+                            }
+                        }
                     }
                 }
             }
@@ -607,6 +663,8 @@ struct VideoGridView: View {
     let importManager: VideoImportManager
     @State private var selectedVideo: ImportedVideo?
     @State private var isShowingVideoPlayer = false
+    @Binding var isSelectionMode: Bool
+    @Binding var selectedVideos: Set<UUID>
     
     let columns = [
         GridItem(.flexible(), spacing: 1),
@@ -628,19 +686,48 @@ struct VideoGridView: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 1) {
                     ForEach(videos) { video in
-                        VideoThumbnail(video: video)
-                            .frame(height: (UIScreen.main.bounds.width / 4) - 0.75)
-                            .onTapGesture {
-                                selectedVideo = video
-                                isShowingVideoPlayer = true
-                            }
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    importManager.deleteVideo(video)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+                        ZStack(alignment: .topLeading) {
+                            VideoThumbnail(video: video)
+                                .frame(height: (UIScreen.main.bounds.width / 4) - 0.75)
+                                .onTapGesture {
+                                    if isSelectionMode {
+                                        if selectedVideos.contains(video.id) {
+                                            selectedVideos.remove(video.id)
+                                        } else {
+                                            selectedVideos.insert(video.id)
+                                        }
+                                    } else {
+                                        selectedVideo = video
+                                        isShowingVideoPlayer = true
+                                    }
                                 }
+                            
+                            if isSelectionMode {
+                                ZStack {
+                                    Circle()
+                                        .strokeBorder(Color.white, lineWidth: 2)
+                                        .background(
+                                            Circle()
+                                                .fill(selectedVideos.contains(video.id) ? Color.red : Color.clear)
+                                        )
+                                        .frame(width: 24, height: 24)
+                                    
+                                    if selectedVideos.contains(video.id) {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                                .padding(8)
                             }
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                importManager.deleteVideo(video)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 0)
