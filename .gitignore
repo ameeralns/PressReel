@@ -86,4 +86,14 @@ Carthage/Build/
 .idea/
 *.moved-aside
 *.xccheckout
-*.xcscmblueprint Config.xcconfig
+
+# Ignore configuration files with sensitive information
+**/Config.xcconfig
+**/config.json
+**/*.env
+**/*.secret
+
+# Prevent accidental commits of any files with API keys
+**/api_key*
+**/*key.txt
+**/*secret*
