@@ -1,0 +1,19 @@
+---
+description: backend rules to obey when generating code for the backend
+globs: 
+---
+
+# Your rule content
+
+- You can @ files here
+- You can use markdown but dont have to
+
+# Backend Rules for Curor AI Agent
+
+1. Confirm Firebase Auth integration and proper session management.
+2. Use Firebase Cloud Storage for media uploads and processing via Cloud Functions.
+3. Maintain data integrity with Firestore; validate all inputs.
+4. Offload compute-heavy tasks (video processing, AI triggers) to Cloud Functions.
+5. Secure API integrations and log errors for monitoring.
+6. Update backend API documentation with new endpoints or changes.
+7. Optimize server-side performance and scalability.

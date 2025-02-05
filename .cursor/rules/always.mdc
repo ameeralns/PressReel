@@ -1,0 +1,18 @@
+---
+description: rules to always obey when being prompted
+globs: 
+---
+
+# Your rule content
+
+- You can @ files here
+- You can use markdown but dont have to
+
+# Global Rules for Curor AI Agent
+
+1. Review the project PRD and design documents before any code changes.
+2. Follow established coding conventions and best practices.
+3. Ensure new code integrates seamlessly with the existing tech stack.
+4. Verify that tests pass and existing functionality remains intact.
+5. Document changes clearly and update all relevant documentation.
+6. Communicate major changes with the team before deployment.

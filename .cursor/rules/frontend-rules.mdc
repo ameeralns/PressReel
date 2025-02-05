@@ -1,0 +1,27 @@
+---
+description: frontend rules to obey when generating front end code in swift
+globs: 
+---
+
+# Your rule content
+
+- You can @ files here
+- You can use markdown but dont have to
+
+# Frontend Rules for Curor AI Agent (Swift)
+
+1. Follow Swift best practices and coding style (use SwiftLint).
+2. Adhere to iOS Human Interface Guidelines for UI/UX consistency.
+3. Implement modular design patterns (MVC/MVVM) for maintainability.
+4. Integrate Firebase SDKs (Auth, Firestore, Cloud Storage) per official docs.
+5. Build reusable UI components with clear separation of concerns.
+6. Optimize layouts using AutoLayout and, where applicable, SwiftUI.
+7. Validate user inputs and ensure secure data handling.
+8. Test UI components for responsiveness and proper functionality.
+9. Implement robust error handling and logging for network/API calls.
+10. Ensure real-time Firestore updates reflect promptly in the UI.
+11. Use native animations and transitions to enhance user experience.
+12. Optimize image and video rendering for smooth performance.
+13. Adhere to accessibility standards (VoiceOver, Dynamic Type).
+14. Maintain backward compatibility with required iOS versions.
+15. Document new UI components with inline comments and update the UI guide.
