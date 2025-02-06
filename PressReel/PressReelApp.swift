@@ -9,6 +9,7 @@ import SwiftUI
 import FirebaseCore
 import GoogleSignIn
 import FirebaseFirestore
+import VideoEditorSDK
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
@@ -24,6 +25,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         
         // Initialize NewsService with your API key
         NewsService.initialize(withAPIKey: "u6ltLItqou9Z2FqJzqPsAlOOWs9R1_5J-hy_CdVJuL7bqTm1")
+        
+        // Initialize VESDK
+        VESDKConfiguration.initialize()
         
         return true
     }

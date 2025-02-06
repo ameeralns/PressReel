@@ -96,10 +96,75 @@ class VideoImportManager: ObservableObject {
             }
     }
     
+    func importVideo(from videoURL: URL) async throws -> ImportedVideo {
+        guard let userId = auth.currentUser?.uid else {
+            throw NSError(domain: "VideoImport", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"])
+        }
+        
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            let fileName = UUID().uuidString
+            
+            // Create thumbnail from the video URL
+            let asset = AVAsset(url: videoURL)
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            
+            let time = CMTime(seconds: 0, preferredTimescale: 600)
+            let thumbnailImage = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CGImage, Error>) in
+                imageGenerator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) { _, image, _, _, error in
+                    if let error = error {
+                        continuation.resume(throwing: error)
+                    } else if let image = image {
+                        continuation.resume(returning: image)
+                    } else {
+                        continuation.resume(throwing: NSError(domain: "VideoImport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to generate thumbnail"]))
+                    }
+                }
+            }
+            
+            // Upload thumbnail
+            let thumbnailRef = storage.reference().child("users/\(userId)/thumbnails/\(fileName).jpg")
+            let thumbnailData = UIImage(cgImage: thumbnailImage).jpegData(compressionQuality: 0.7)
+            _ = try await thumbnailRef.putData(thumbnailData!)
+            let thumbnailURL = try await thumbnailRef.downloadURL()
+            
+            // Upload video
+            let videoRef = storage.reference().child("users/\(userId)/videos/\(fileName).mp4")
+            let videoData = try Data(contentsOf: videoURL)
+            _ = try await videoRef.putData(videoData)
+            let videoURL = try await videoRef.downloadURL()
+            
+            // Create video document
+            let video = ImportedVideo(
+                id: UUID(),
+                userId: userId,
+                fileName: fileName,
+                dateImported: Date(),
+                duration: CMTimeGetSeconds(try await asset.load(.duration)),
+                storageURL: videoURL.absoluteString,
+                thumbnailURL: thumbnailURL.absoluteString,
+                localIdentifier: "url-import-\(UUID().uuidString)" // Default identifier for URL imports
+            )
+            
+            try await db.collection("videos").document(video.id.uuidString).setData(from: video)
+            return video
+            
+        } catch {
+            print("Error during video import: \(error.localizedDescription)")
+            throw error
+        }
+    }
+    
     func importVideo(from asset: PHAsset) async throws -> ImportedVideo {
         guard let userId = auth.currentUser?.uid else {
             throw NSError(domain: "VideoImport", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not authenticated"])
         }
+        
+        // Store the local identifier for later use
+        let localIdentifier = asset.localIdentifier
         
         print("Starting video import for asset: \(asset)")
         backgroundTask = UIApplication.shared.beginBackgroundTask { [weak self] in
@@ -194,7 +259,8 @@ class VideoImportManager: ObservableObject {
                 dateImported: Date(),
                 duration: duration,
                 storageURL: videoURL,
-                thumbnailURL: finalThumbnailURL
+                thumbnailURL: finalThumbnailURL,
+                localIdentifier: localIdentifier
             )
             
             print("Saving to Firestore...")
@@ -365,9 +431,10 @@ struct ImportedVideo: Identifiable, Codable {
     let duration: TimeInterval
     let storageURL: String
     let thumbnailURL: String
+    let localIdentifier: String
     
     enum CodingKeys: String, CodingKey {
-        case id, userId, fileName, dateImported, duration, storageURL, thumbnailURL
+        case id, userId, fileName, dateImported, duration, storageURL, thumbnailURL, localIdentifier
     }
 }
 
@@ -482,7 +549,21 @@ struct ImportVideosView: View {
                             
                             if !selectedVideos.isEmpty {
                                 Button(action: {
-                                    // Handle next action
+                                    // Get the first selected video asset
+                                    if let selectedId = selectedVideos.first,
+                                       let selectedVideo = importManager.selectedVideos.first(where: { $0.id == selectedId }) {
+                                        // Fetch the PHAsset for the selected video
+                                        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [selectedVideo.localIdentifier], options: nil)
+                                        if let asset = fetchResult.firstObject {
+                                            selectedAsset = asset
+                                            showVideoEditor = true
+                                            isSelectionMode = false
+                                            selectedVideos.removeAll()
+                                        } else {
+                                            errorMessage = "Could not locate the selected video in your photo library"
+                                            showingError = true
+                                        }
+                                    }
                                 }) {
                                     Text("Next")
                                         .font(.system(size: 17, weight: .semibold))
@@ -549,7 +630,35 @@ struct ImportVideosView: View {
         } message: {
             Text(errorMessage)
         }
+        .fullScreenCover(isPresented: $showVideoEditor, content: {
+            if let asset = selectedAsset {
+                VideoEditorView(asset: asset) { editedVideoURL in
+                    if let url = editedVideoURL {
+                        Task {
+                            do {
+                                // Import the edited video
+                                let video = try await importManager.importVideo(from: url)
+                                await MainActor.run {
+                                    if !importManager.selectedVideos.contains(where: { $0.id == video.id }) {
+                                        importManager.selectedVideos.append(video)
+                                    }
+                                }
+                            } catch {
+                                await MainActor.run {
+                                    errorMessage = error.localizedDescription
+                                    showingError = true
+                                }
+                            }
+                        }
+                    }
+                    showVideoEditor = false
+                }
+            }
+        })
     }
+    
+    @State private var selectedAsset: PHAsset?
+    @State private var showVideoEditor = false
     
     private func handlePhotoSelection(_ items: [PhotosPickerItem]) {
         Task {
