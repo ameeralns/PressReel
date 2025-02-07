@@ -2,10 +2,40 @@ import SwiftUI
 import VideoEditorSDK
 import Photos
 import UIKit
+import AVFoundation
 import FirebaseStorage
 import FirebaseAuth
+import FirebaseFirestore
 
 struct VideoEditorView: View {
+    // MARK: - Helper Functions
+    
+    private func formatTime(seconds: Float64) -> String {
+        let time = Int(seconds)
+        let hours = time / 3600
+        let minutes = (time % 3600) / 60
+        let seconds = time % 60
+        
+        if hours > 0 {
+            return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            return String(format: "%02d:%02d", minutes, seconds)
+        }
+    }
+    private func generateThumbnail(from videoURL: URL) -> UIImage? {
+        let asset = AVAsset(url: videoURL)
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        imageGenerator.appliesPreferredTrackTransform = true
+        
+        do {
+            let cgImage = try imageGenerator.copyCGImage(at: .zero, actualTime: nil)
+            return UIImage(cgImage: cgImage)
+        } catch {
+            print("❌ [VideoEditor] Failed to generate thumbnail: \(error.localizedDescription)")
+            return nil
+        }
+    }
+    
     // MARK: - Properties
     let asset: PHAsset
     let onComplete: (URL?) -> Void
@@ -38,13 +68,12 @@ struct VideoEditorView: View {
             PHImageManager.default().requestAVAsset(forVideo: asset, options: nil) { avAsset, _, _ in
                 guard let avAsset = avAsset else {
                     print("❌ [VideoEditor] Failed to get video asset")
-                    DispatchQueue.main.async {
-                        onComplete(nil)
-                        presentationMode.wrappedValue.dismiss()
-                    }
+                    onComplete(nil)
+                    presentationMode.wrappedValue.dismiss()
                     return
                 }
                 
+                // Execute on main thread since we're updating UI
                 DispatchQueue.main.async {
                     // Create video editor configuration
                     let configuration = Configuration { builder in
@@ -73,26 +102,184 @@ struct VideoEditorView: View {
                                 return
                             }
                             
-                            // Upload to Firebase Storage
-                            let storage = Storage.storage()
-                            let storageRef = storage.reference()
+                            // Create VideoEditViewController to get serialized settings
+                            let videoEditViewController = VideoEditViewController(videoAsset: result.task.video)
                             
-                            // Create a unique filename using timestamp and user ID
+                            // Get serialized settings (optional Data object)
+                            guard let serializedSettings = videoEditViewController.serializedSettings else {
+                                print("❌ [VideoEditor] Failed to get serialized settings")
+                                return
+                            }
+                            
+                            // Convert to JSON for Firestore
+                            guard let jsonDict = try? JSONSerialization.jsonObject(with: serializedSettings, options: []) as? [String: Any] else {
+                                print("❌ [VideoEditor] Failed to convert serialized settings to JSON")
+                                return
+                            }
+                            
+                            // Create project data
                             let timestamp = Int(Date().timeIntervalSince1970)
-                            let videoRef = storageRef.child("users/\(currentUser.uid)/videos/\(timestamp).mp4")
+                            let projectId = "\(currentUser.uid)_\(timestamp)"
                             
-                            // Upload the video file
-                            videoRef.putFile(from: result.output.url, metadata: nil) { metadata, error in
+                            // Prepare video segments data
+                            let uploadManager = VideoUploadManager()
+                            let uploadGroup = DispatchGroup()
+                            let segmentsQueue = DispatchQueue(label: "com.pressreel.segments")
+                            var segmentsData: [[String: Any]] = []
+                            
+                            for (index, segment) in result.task.video.segments.enumerated() {
+                                uploadGroup.enter()
+                                
+                                Task {
+                                    do {
+                                        let metadata = StorageMetadata()
+                                        metadata.contentType = "video/mp4"
+                                        
+                                        let path = "users/\(currentUser.uid)/projects/\(projectId)/segments/\(index).mp4"
+                                        let downloadURL = try await uploadManager.uploadVideo(
+                                            at: segment.url,
+                                            to: path,
+                                            metadata: metadata
+                                        )
+                                        
+                                        // Get segment duration and time values
+                                        let asset = AVAsset(url: segment.url)
+                                        let duration = Float64(CMTimeGetSeconds(asset.duration))
+                                        
+                                        // Create segment data with proper time values
+                                        let segmentData: [String: Any] = [
+                                            "index": index,
+                                            "url": downloadURL.absoluteString,
+                                            "duration": duration,
+                                            "durationFormatted": formatTime(seconds: duration)
+                                        ]
+                                        
+                                        segmentsQueue.async {
+                                            segmentsData.append(segmentData)
+                                            print("📹 [VideoEditor] Successfully uploaded segment \(index)")
+                                        }
+                                    } catch {
+                                        print("❌ [VideoEditor] Failed to upload segment \(index): \(error.localizedDescription)")
+                                    }
+                                    
+                                    uploadGroup.leave()
+                                }
+                            }
+                            
+                            uploadGroup.notify(queue: .main) {
+                                // Generate and upload thumbnail
+                                if let thumbnailImage = generateThumbnail(from: result.output.url),
+                                   let thumbnailData = thumbnailImage.jpegData(compressionQuality: 0.7) {
+                                    
+                                    let thumbnailRef = Storage.storage().reference()
+                                        .child("users/\(currentUser.uid)/projects/\(projectId)/thumbnail.jpg")
+                                    
+                                    thumbnailRef.putData(thumbnailData, metadata: nil) { metadata, error in
+                                        if let error = error {
+                                            print("❌ [VideoEditor] Failed to upload thumbnail: \(error.localizedDescription)")
+                                            return
+                                        }
+                                        
+                                        // Get thumbnail URL
+                                        thumbnailRef.downloadURL { url, error in
+                                            if let thumbnailURL = url?.absoluteString {
+                                                // Create project document with thumbnail and final video URL
+                                                let projectData: [String: Any] = [
+                                                    "userId": currentUser.uid,
+                                                    "createdAt": timestamp,
+                                                    "updatedAt": timestamp,
+                                                    "editorState": jsonDict,
+                                                    "segments": segmentsData,
+                                                    "videoSize": [
+                                                        "width": result.task.video.size.width,
+                                                        "height": result.task.video.size.height
+                                                    ],
+                                                    "thumbnailURL": thumbnailURL,
+                                                    "finalVideoURL": result.output.url.absoluteString
+                                                ]
+                                                
+                                                // Save to Firestore
+                                                let db = Firestore.firestore()
+                                                db.collection("projects").document(projectId).setData(projectData) { error in
+                                                    if let error = error {
+                                                        print("❌ [VideoEditor] Failed to save project: \(error.localizedDescription)")
+                                                    } else {
+                                                        print("📹 [VideoEditor] Project saved successfully with thumbnail")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    print("❌ [VideoEditor] Failed to generate thumbnail")
+                                    
+                                    // Save project without thumbnail but with final video URL
+                                    let projectData: [String: Any] = [
+                                        "userId": currentUser.uid,
+                                        "createdAt": timestamp,
+                                        "updatedAt": timestamp,
+                                        "editorState": jsonDict,
+                                        "segments": segmentsData,
+                                        "videoSize": [
+                                            "width": result.task.video.size.width,
+                                            "height": result.task.video.size.height
+                                        ],
+                                        "finalVideoURL": result.output.url.absoluteString
+                                    ]
+                                    
+                                    // Save to Firestore
+                                    let db = Firestore.firestore()
+                                    db.collection("projects").document(projectId).setData(projectData) { error in
+                                        if let error = error {
+                                            print("❌ [VideoEditor] Failed to save project: \(error.localizedDescription)")
+                                        } else {
+                                            print("📹 [VideoEditor] Project saved successfully without thumbnail")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Generate and upload thumbnail
+                            if let thumbnailImage = generateThumbnail(from: result.output.url) {
+                                if let thumbnailData = thumbnailImage.jpegData(compressionQuality: 0.7) {
+                                    let thumbnailRef = Storage.storage().reference()
+                                        .child("users/\(currentUser.uid)/thumbnails/\(projectId).jpg")
+                                    
+                                    thumbnailRef.putData(thumbnailData, metadata: nil) { metadata, error in
+                                        if let error = error {
+                                            print("❌ [VideoEditor] Failed to upload thumbnail: \(error.localizedDescription)")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Upload final exported video
+                            let videoRef = Storage.storage().reference()
+                                .child("users/\(currentUser.uid)/projects/\(projectId)/final.mp4")
+                            
+                            // Create metadata with content type
+                            let metadata = StorageMetadata()
+                            metadata.contentType = "video/mp4"
+                            
+                            // Configure background upload session
+                            let config = URLSessionConfiguration.background(withIdentifier: "com.pressreel.upload.final")
+                            config.isDiscretionary = true
+                            config.sessionSendsLaunchEvents = true
+                            
+                            videoRef.putFile(from: result.output.url, metadata: metadata) { metadata, error in
                                 DispatchQueue.main.async {
                                     if let error = error {
-                                        print("❌ [VideoEditor] Failed to upload to Firebase: \(error.localizedDescription)")
+                                        print("❌ [VideoEditor] Failed to upload final video: \(error.localizedDescription)")
                                     } else {
-                                        print("📹 [VideoEditor] Uploaded to Firebase Storage")
-                                        // Get the download URL
+                                        print("📹 [VideoEditor] Final video uploaded")
                                         videoRef.downloadURL { url, error in
                                             if let downloadURL = url {
-                                                print("📹 [VideoEditor] Video URL: \(downloadURL.absoluteString)")
-                                                // Here you can save the downloadURL to Firestore if needed
+                                                print("📹 [VideoEditor] Final video URL: \(downloadURL.absoluteString)")
+                                                // Update project with final video URL
+                                                let db = Firestore.firestore()
+                                                db.collection("projects").document(projectId).updateData([
+                                                    "finalVideoUrl": downloadURL.absoluteString
+                                                ])
                                             }
                                             onComplete(result.output.url)
                                             dismissAll()
@@ -168,4 +355,3 @@ private extension UIImage {
         return newImage
     }
 }
-
