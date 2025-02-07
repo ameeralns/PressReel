@@ -2,6 +2,8 @@ import SwiftUI
 import VideoEditorSDK
 import Photos
 import UIKit
+import FirebaseStorage
+import FirebaseAuth
 
 struct VideoEditorView: View {
     // MARK: - Properties
@@ -62,19 +64,40 @@ struct VideoEditorView: View {
                     let videoEditor = VideoEditor(video: video, configuration: configuration)
                         .onDidSave { result in
                             print("📹 [VideoEditor] Save completed")
-                            // Save to camera roll
-                            PHPhotoLibrary.shared().performChanges {
-                                let request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: result.output.url)
-                                request?.creationDate = Date()
-                            } completionHandler: { success, error in
+                            
+                            // Check if user is authenticated
+                            guard let currentUser = Auth.auth().currentUser else {
+                                print("❌ [VideoEditor] No authenticated user found")
+                                onComplete(nil)
+                                dismissAll()
+                                return
+                            }
+                            
+                            // Upload to Firebase Storage
+                            let storage = Storage.storage()
+                            let storageRef = storage.reference()
+                            
+                            // Create a unique filename using timestamp and user ID
+                            let timestamp = Int(Date().timeIntervalSince1970)
+                            let videoRef = storageRef.child("users/\(currentUser.uid)/videos/\(timestamp).mp4")
+                            
+                            // Upload the video file
+                            videoRef.putFile(from: result.output.url, metadata: nil) { metadata, error in
                                 DispatchQueue.main.async {
-                                    if success {
-                                        print("📹 [VideoEditor] Saved to camera roll")
-                                    } else if let error = error {
-                                        print("❌ [VideoEditor] Failed to save to camera roll: \(error.localizedDescription)")
+                                    if let error = error {
+                                        print("❌ [VideoEditor] Failed to upload to Firebase: \(error.localizedDescription)")
+                                    } else {
+                                        print("📹 [VideoEditor] Uploaded to Firebase Storage")
+                                        // Get the download URL
+                                        videoRef.downloadURL { url, error in
+                                            if let downloadURL = url {
+                                                print("📹 [VideoEditor] Video URL: \(downloadURL.absoluteString)")
+                                                // Here you can save the downloadURL to Firestore if needed
+                                            }
+                                            onComplete(result.output.url)
+                                            dismissAll()
+                                        }
                                     }
-                                    onComplete(result.output.url)
-                                    dismissAll()
                                 }
                             }
                         }
