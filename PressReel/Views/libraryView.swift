@@ -287,6 +287,7 @@ struct ProjectCard: View {
     @State private var isEditingTitle = false
     @State private var editedTitle: String = ""
     @State private var isDeleting = false
+    @State private var isExporting = false
     @StateObject private var videoPlayerViewModel = VideoPlayerViewModel()
     @Environment(\.presentationMode) var presentationMode
     
@@ -448,6 +449,14 @@ struct ProjectCard: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contextMenu {
+            Button(action: {
+                Task {
+                    await exportVideo()
+                }
+            }) {
+                Label("Export Video", systemImage: "square.and.arrow.up")
+            }
+            
             Button(role: .destructive, action: {
                 Task {
                     await deleteProject()
@@ -516,6 +525,33 @@ struct ProjectCard: View {
                 }
                 }
             }
+        }
+    }
+    
+    private func exportVideo() async {
+        guard let videoURL = URL(string: project.finalVideoURL) else { return }
+        
+        let storage = Storage.storage()
+        let reference = storage.reference(forURL: videoURL.absoluteString)
+        
+        do {
+            // Get the temporary local URL for the video
+            let localURL = FileManager.default.temporaryDirectory.appendingPathComponent(videoURL.lastPathComponent)
+            _ = try await reference.writeAsync(toFile: localURL)
+            
+            // Share the video using UIActivityViewController
+            await MainActor.run {
+                let activityVC = UIActivityViewController(activityItems: [localURL], applicationActivities: nil)
+                
+                // Present the share sheet
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = windowScene.windows.first,
+                   let rootViewController = window.rootViewController {
+                    rootViewController.present(activityVC, animated: true)
+                }
+            }
+        } catch {
+            print("❌ Error exporting video: \(error.localizedDescription)")
         }
     }
     
