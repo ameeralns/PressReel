@@ -10,19 +10,162 @@ import AuthenticationServices
 import FirebaseAuth
 import GoogleSignIn
 
+struct OnboardingPage: Identifiable {
+    let id = UUID()
+    let title: String
+    let description: String
+    let imageName: String
+    let color: Color
+}
+
 struct ContentView: View {
     @StateObject private var authService = AuthenticationService()
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @State private var isAnimating = false
     @State private var showSignUp = false
     @State private var showLogin = false
+    @State private var currentPage = 0
+    
+    private let onboardingPages = [
+        OnboardingPage(
+            title: "Create Amazing Videos",
+            description: "Transform your ideas into stunning videos with our powerful editing tools",
+            imageName: "video.badge.plus",
+            color: .red
+        ),
+        OnboardingPage(
+            title: "Share Your Story",
+            description: "Connect with your audience through engaging video content",
+            imageName: "person.2.wave.2",
+            color: .orange
+        ),
+        OnboardingPage(
+            title: "Grow Your Presence",
+            description: "Build your brand and reach new heights with PressReel",
+            imageName: "chart.line.uptrend.xyaxis",
+            color: .purple
+        )
+    ]
     
     var body: some View {
         Group {
             if authService.user != nil {
                 MainTabView()
+            } else if !hasSeenOnboarding {
+                OnboardingPagesView(pages: onboardingPages, currentPage: $currentPage) {
+                    withAnimation {
+                        hasSeenOnboarding = true
+                    }
+                }
             } else {
-                OnboardingView(isAnimating: $isAnimating, showSignUp: $showSignUp, showLogin: $showLogin)
+                LandingView(isAnimating: $isAnimating, showSignUp: $showSignUp, showLogin: $showLogin)
             }
+        }
+    }
+}
+
+struct OnboardingPagesView: View {
+    let pages: [OnboardingPage]
+    @Binding var currentPage: Int
+    let onFinish: () -> Void
+    
+    @State private var pageOffset: CGFloat = 0
+    @State private var dragOffset: CGFloat = 0
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                TabView(selection: $currentPage) {
+                    ForEach(pages.indices, id: \.self) { index in
+                        OnboardingPageView(page: pages[index])
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: UIScreen.main.bounds.height * 0.7)
+                
+                // Page Control dots
+                HStack(spacing: 12) {
+                    ForEach(0..<pages.count, id: \.self) { index in
+                        Circle()
+                            .fill(currentPage == index ? Color.white : Color.white.opacity(0.5))
+                            .frame(width: 8, height: 8)
+                            .scaleEffect(currentPage == index ? 1.2 : 1.0)
+                            .animation(.spring(), value: currentPage)
+                    }
+                }
+                .padding(.top, 20)
+                
+                // Next/Finish button
+                Button(action: {
+                    if currentPage < pages.count - 1 {
+                        withAnimation {
+                            currentPage += 1
+                        }
+                    } else {
+                        onFinish()
+                    }
+                }) {
+                    Text(currentPage < pages.count - 1 ? "Next" : "Get Started")
+                        .font(.headline)
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.white)
+                        .clipShape(Capsule())
+                }
+                .padding(.horizontal, 30)
+                .padding(.top, 30)
+                
+                if currentPage < pages.count - 1 {
+                    Button("Skip") {
+                        onFinish()
+                    }
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.top, 20)
+                }
+            }
+            .padding(.bottom, 50)
+        }
+    }
+}
+
+struct OnboardingPageView: View {
+    let page: OnboardingPage
+    @State private var isAnimating = false
+    
+    var body: some View {
+        VStack(spacing: 30) {
+            Image(systemName: page.imageName)
+                .font(.system(size: 100))
+                .foregroundColor(page.color)
+                .scaleEffect(isAnimating ? 1 : 0.5)
+                .opacity(isAnimating ? 1 : 0)
+            
+            VStack(spacing: 12) {
+                Text(page.title)
+                    .font(.title)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .offset(x: isAnimating ? 0 : UIScreen.main.bounds.width)
+                
+                Text(page.description)
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
+                    .offset(x: isAnimating ? 0 : -UIScreen.main.bounds.width)
+            }
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.8)) {
+                isAnimating = true
+            }
+        }
+        .onDisappear {
+            isAnimating = false
         }
     }
 }
@@ -187,7 +330,7 @@ struct CreateButton: View {
     }
 }
 
-struct OnboardingView: View {
+struct LandingView: View {
     @Binding var isAnimating: Bool
     @Binding var showSignUp: Bool
     @Binding var showLogin: Bool

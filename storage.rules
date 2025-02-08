@@ -11,6 +11,11 @@ service firebase.storage {
       allow write, delete: if request.auth != null && request.auth.uid == userId;
     }
     
+    match /segments/{userId}/{fileName} {
+      allow read: if true;
+      allow write, delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
     match /{allPaths=**} {
       allow read: if true;
     }

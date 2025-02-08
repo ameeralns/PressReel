@@ -2,6 +2,7 @@ import SwiftUI
 import FirebaseFirestore
 import AVKit
 import Kingfisher
+import FirebaseStorage
 
 // MARK: - Project Model
 struct Project: Identifiable {
@@ -45,31 +46,53 @@ struct Project: Identifiable {
 }
 
 @MainActor
+class LibraryViewModel: ObservableObject {
+    @Published var projects: [Project] = []
+    private var listener: ListenerRegistration? {
+        willSet {
+            listener?.remove()
+        }
+    }
+    
+    func startListening(userId: String) {
+        let db = Firestore.firestore()
+        listener = db.collection("projects")
+            .whereField("userId", isEqualTo: userId)
+            .addSnapshotListener { [weak self] snapshot, error in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    
+                    if let error = error {
+                        print("❌ Error fetching projects: \(error.localizedDescription)")
+                        return
+                    }
+                    
+                    guard let documents = snapshot?.documents else { return }
+                    
+                    self.projects = documents.map { doc in
+                        Project(id: doc.documentID, data: doc.data())
+                    }
+                }
+            }
+    }
+    
+    deinit {
+        // The willSet observer will handle cleanup
+        listener = nil
+    }
+}
+
+@MainActor
 struct LibraryView: View {
     @State private var selectedFilter = 0
     @State private var showProfile = false
-    @State private var projects: [Project] = []
+    @StateObject private var viewModel = LibraryViewModel()
     @StateObject private var authService = AuthenticationService()
     let filters = ["All", "In Progress", "Published"]
     
-    private func fetchProjects() {
+    private func setupProjectsListener() {
         guard let userId = authService.user?.uid else { return }
-        
-        let db = Firestore.firestore()
-        db.collection("projects")
-            .whereField("userId", isEqualTo: userId)
-            .getDocuments { snapshot, error in
-                if let error = error {
-                    print("❌ Error fetching projects: \(error.localizedDescription)")
-                    return
-                }
-                
-                guard let documents = snapshot?.documents else { return }
-                
-                self.projects = documents.map { doc in
-                    Project(id: doc.documentID, data: doc.data())
-                }
-            }
+        viewModel.startListening(userId: userId)
     }
     
     var body: some View {
@@ -142,14 +165,14 @@ struct LibraryView: View {
                         GridItem(.flexible()),
                         GridItem(.flexible())
                     ], spacing: 16) {
-                        ForEach(projects) { project in
-                            ProjectCard(project: project)
+                        ForEach(viewModel.projects) { project in
+                            ProjectCard(project: project, onUpdate: {})
                         }
                     }
                     .padding()
                 }
                 .onAppear {
-                    fetchProjects()
+                    setupProjectsListener()
                 }
             }
         }
@@ -160,12 +183,112 @@ struct LibraryView: View {
 }
 
 @MainActor
+class VideoPlayerViewModel: ObservableObject {
+    @Published var isVideoReady = false
+    @Published var player: AVPlayer?
+    @Published var error: Error?
+    private var statusObserver: NSKeyValueObservation?
+    
+    func loadVideo(url: URL) async {
+        cleanup() // Clean up any existing player
+        isVideoReady = false
+        error = nil
+        
+        print("🎥 [ProjectCard] Creating player with URL: \(url)")
+        
+        // Create an AVAsset and load its properties
+        let asset = AVURLAsset(url: url)
+        print("📼 [ProjectCard] Loading asset properties...")
+        
+        do {
+            // Load duration and tracks properties asynchronously
+            let duration = try await asset.load(.duration)
+            print("ℹ️ [ProjectCard] Asset duration: \(duration.seconds) seconds")
+            
+            // Create a player item with the loaded asset
+            let playerItem = AVPlayerItem(asset: asset)
+            print("🎥 [ProjectCard] Created player item")
+            
+            // Create the player with the item
+            let newPlayer = AVPlayer(playerItem: playerItem)
+            newPlayer.automaticallyWaitsToMinimizeStalling = true
+            
+            // Set up status observation before assigning to published property
+            statusObserver = playerItem.observe(\AVPlayerItem.status) { [weak self] item, _ in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    print("📺 [ProjectCard] Player item status changed: \(item.status.rawValue)")
+                    
+                    switch item.status {
+                    case .readyToPlay:
+                        print("✅ [ProjectCard] Video ready to play")
+                        self.isVideoReady = true
+                        self.player?.play()
+                    case .failed:
+                        let errorMessage = item.error?.localizedDescription ?? "Unknown error"
+                        print("❌ [ProjectCard] Video failed to load: \(errorMessage)")
+                        self.error = item.error ?? NSError(domain: "VideoPlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])
+                        self.cleanup()
+                    case .unknown:
+                        print("⚠️ [ProjectCard] Video loading status unknown")
+                    @unknown default:
+                        break
+                    }
+                }
+            }
+            
+            // Set up notification for playback errors
+            NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemFailedToPlayToEndTime,
+                object: playerItem,
+                queue: .main
+            ) { [weak self] notification in
+                Task { @MainActor in
+                    if let userInfo = notification.userInfo,
+                       let error = userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
+                        print("❌ [ProjectCard] Playback error: \(error.localizedDescription)")
+                        self?.error = error
+                        self?.cleanup()
+                    }
+                }
+            }
+            
+            // Finally, assign the player
+            print("🎮 [ProjectCard] Setting up player")
+            self.player = newPlayer
+            
+        } catch {
+            print("❌ [ProjectCard] Failed to load asset: \(error.localizedDescription)")
+            self.error = error
+            self.cleanup()
+        }
+    }
+    
+    nonisolated func cleanup() {
+        Task { @MainActor in
+            statusObserver?.invalidate()
+            statusObserver = nil
+            player?.pause()
+            player?.replaceCurrentItem(with: nil)
+            player = nil
+            isVideoReady = false
+        }
+    }
+    
+    deinit {
+        cleanup()
+    }
+}
+
 struct ProjectCard: View {
     let project: Project
+    let onUpdate: () -> Void
     @State private var isShowingVideo = false
-    @State private var videoPlayer: AVPlayer?
     @State private var isEditingTitle = false
     @State private var editedTitle: String = ""
+    @State private var isDeleting = false
+    @StateObject private var videoPlayerViewModel = VideoPlayerViewModel()
+    @Environment(\.presentationMode) var presentationMode
     
     private func updateProjectTitle(newTitle: String) {
         guard !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -179,6 +302,7 @@ struct ProjectCard: View {
                 print("❌ Error updating project title: \(error.localizedDescription)")
             } else {
                 print("✅ Project title updated successfully")
+                onUpdate()
             }
         }
     }
@@ -223,6 +347,65 @@ struct ProjectCard: View {
         return formatter.string(from: date)
     }
     
+    private func deleteProject() async {
+        isDeleting = true
+        let db = Firestore.firestore()
+        let storage = Storage.storage()
+        
+        do {
+            let userId = project.userId
+            
+            // Delete all segment files from Storage
+            for segment in project.segments {
+                if let url = segment["url"] as? String,
+                   let videoURL = URL(string: url) {
+                    let path = videoURL.lastPathComponent
+                    let reference = storage.reference().child("segments/\(userId)/\(path)")
+                    do {
+                        try await reference.delete()
+                    } catch {
+                        print("⚠️ Skipping non-existent segment file: \(path)")
+                        continue
+                    }
+                }
+            }
+            
+            // Delete thumbnail if exists
+            if let thumbnailURL = project.thumbnailURL,
+               let url = URL(string: thumbnailURL) {
+                let path = url.lastPathComponent
+                let reference = storage.reference().child("thumbnails/\(userId)/\(path)")
+                do {
+                    try await reference.delete()
+                } catch {
+                    print("⚠️ Skipping non-existent thumbnail: \(path)")
+                }
+            }
+            
+            // Delete final video if exists
+            if !project.finalVideoURL.isEmpty,
+               let url = URL(string: project.finalVideoURL) {
+                let path = url.lastPathComponent
+                let reference = storage.reference().child("videos/\(userId)/\(path)")
+                do {
+                    try await reference.delete()
+                } catch {
+                    print("⚠️ Skipping non-existent video: \(path)")
+                }
+            }
+            
+            // Delete the project document from Firestore
+            try await db.collection("projects").document(project.id).delete()
+            
+            print("✅ Project and associated files deleted successfully")
+            onUpdate()
+        } catch {
+            print("❌ Error deleting project: \(error.localizedDescription)")
+        }
+        
+        isDeleting = false
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             thumbnailView
@@ -264,28 +447,80 @@ struct ProjectCard: View {
                 .fill(Color.red)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .contextMenu {
+            Button(role: .destructive, action: {
+                Task {
+                    await deleteProject()
+                }
+            }) {
+                Label("Delete Project", systemImage: "trash")
+            }
+        }
+        .overlay {
+            if isDeleting {
+                ZStack {
+                    Color.black.opacity(0.7)
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                }
+            }
+        }
         .sheet(isPresented: $isShowingVideo) {
-            if let player = videoPlayer {
-                VideoPlayer(player: player)
-                    .ignoresSafeArea()
-                    .onAppear {
-                        print("🎥 [ProjectCard] Video player sheet appeared")
-                        print("📺 [ProjectCard] Current item duration: \(player.currentItem?.duration.seconds ?? 0) seconds")
+            GeometryReader { geometry in
+                ZStack {
+                    Color.black.edgesIgnoringSafeArea(.all)
+                    
+                    if let error = videoPlayerViewModel.error {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                            .font(.system(size: 40))
+                        Text(error.localizedDescription)
+                            .foregroundColor(.red)
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
                     }
-                    .onDisappear {
-                        print("🎬 [ProjectCard] Video player sheet dismissed")
-                        player.pause()
-                        player.replaceCurrentItem(with: nil)
+                } else if let player = videoPlayerViewModel.player {
+                    if videoPlayerViewModel.isVideoReady {
+                        VideoPlayer(player: player)
+                            .ignoresSafeArea()
+                            .onDisappear {
+                                print("🎥 [ProjectCard] Video player sheet dismissed")
+                                Task { @MainActor in
+                                    videoPlayerViewModel.cleanup()
+                                }
+                            }
+                    } else {
+                        VStack(spacing: 20) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .red))
+                                .scaleEffect(2.0)
+                            
+                            Text("Preparing video...")
+                                .foregroundColor(.white)
+                                .font(.headline)
+                        }
+                        .frame(width: geometry.size.width, height: geometry.size.height)
                     }
-            } else {
-                Text("Unable to load video player")
-                    .foregroundColor(.red)
+                } else {
+                    VStack(spacing: 20) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .red))
+                            .scaleEffect(2.0)
+                        
+                        Text("Loading video...")
+                            .foregroundColor(.white)
+                            .font(.headline)
+                    }
+                }
+                }
             }
         }
     }
     
     private func loadVideo() {
-        print("\n📼 [ProjectCard] Starting video load process")
+        print("📼 [ProjectCard] Starting video load process")
         print("🔍 [ProjectCard] Project ID: \(project.id)")
         print("🔗 [ProjectCard] Video URL: \(project.finalVideoURL)")
         
@@ -296,47 +531,9 @@ struct ProjectCard: View {
         
         print("✅ [ProjectCard] URL successfully parsed: \(url)")
         
-        // Create a new player with the URL
-        let player = AVPlayer(url: url)
-        
-        // Add observer for player status
-        let statusObserver = player.currentItem?.observe(\.status) { item, _ in
-            switch item.status {
-            case .readyToPlay:
-                print("✅ [ProjectCard] Video ready to play")
-                print("ℹ️ [ProjectCard] Video duration: \(item.duration.seconds) seconds")
-            case .failed:
-                print("❌ [ProjectCard] Video failed to load: \(item.error?.localizedDescription ?? "Unknown error")")
-            case .unknown:
-                print("⚠️ [ProjectCard] Video loading status unknown")
-            @unknown default:
-                break
-            }
+        Task {
+            await videoPlayerViewModel.loadVideo(url: url)
         }
-        
-        // Add observer for playback errors
-        NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemFailedToPlayToEndTime,
-            object: player.currentItem,
-            queue: .main
-        ) { notification in
-            if let userInfo = notification.userInfo,
-               let error = userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
-                print("❌ [ProjectCard] Playback error: \(error.localizedDescription)")
-            }
-        }
-        
-        // Set up the player
-        player.automaticallyWaitsToMinimizeStalling = true
-        
-        print("🎮 [ProjectCard] Player configured and ready")
-        
-        // Store the player and show the video
-        self.videoPlayer = player
-        self.isShowingVideo = true
-        
-        // Start playing when ready
-        player.play()
-        print("▶️ [ProjectCard] Play command issued")
+        isShowingVideo = true
     }
 }
