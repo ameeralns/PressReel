@@ -291,6 +291,7 @@ struct ProjectCard: View {
     @State private var editedTitle: String = ""
     @State private var isDeleting = false
     @State private var isExporting = false
+    @State private var isEditing = false
     @StateObject private var videoPlayerViewModel = VideoPlayerViewModel()
     @Environment(\.presentationMode) var presentationMode
     
@@ -453,6 +454,12 @@ struct ProjectCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contextMenu {
             Button(action: {
+                isEditing = true
+            }) {
+                Label("Edit Project", systemImage: "pencil")
+            }
+            
+            Button(action: {
                 Task {
                     await exportVideo()
                 }
@@ -466,6 +473,14 @@ struct ProjectCard: View {
                 }
             }) {
                 Label("Delete Project", systemImage: "trash")
+            }
+        }
+        .sheet(isPresented: $isEditing) {
+            EditVideoEditorView(project: project) { url in
+                isEditing = false
+                if url != nil {
+                    onUpdate()
+                }
             }
         }
         .overlay {
