@@ -215,7 +215,8 @@ class VideoPlayerViewModel: ObservableObject {
             
             // Set up status observation before assigning to published property
             statusObserver = playerItem.observe(\AVPlayerItem.status) { [weak self] item, _ in
-                Task { @MainActor in
+                guard let self = self else { return }
+                Task { @MainActor [weak self] in
                     guard let self = self else { return }
                     print("📺 [ProjectCard] Player item status changed: \(item.status.rawValue)")
                     
@@ -243,12 +244,13 @@ class VideoPlayerViewModel: ObservableObject {
                 object: playerItem,
                 queue: .main
             ) { [weak self] notification in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
                     if let userInfo = notification.userInfo,
                        let error = userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
                         print("❌ [ProjectCard] Playback error: \(error.localizedDescription)")
-                        self?.error = error
-                        self?.cleanup()
+                        self.error = error
+                        self.cleanup()
                     }
                 }
             }
@@ -265,13 +267,14 @@ class VideoPlayerViewModel: ObservableObject {
     }
     
     nonisolated func cleanup() {
-        Task { @MainActor in
-            statusObserver?.invalidate()
-            statusObserver = nil
-            player?.pause()
-            player?.replaceCurrentItem(with: nil)
-            player = nil
-            isVideoReady = false
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            self.statusObserver?.invalidate()
+            self.statusObserver = nil
+            self.player?.pause()
+            self.player?.replaceCurrentItem(with: nil)
+            self.player = nil
+            self.isVideoReady = false
         }
     }
     

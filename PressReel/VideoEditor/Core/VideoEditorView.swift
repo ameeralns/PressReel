@@ -228,14 +228,30 @@ struct VideoEditorView: View {
                             }
                             
                             // Generate and upload thumbnail
-                            if let thumbnailImage = generateThumbnail(from: result.output.url) {
-                                if let thumbnailData = thumbnailImage.jpegData(compressionQuality: 0.7) {
-                                    let thumbnailRef = Storage.storage().reference()
-                                        .child("users/\(currentUser.uid)/thumbnails/\(projectId).jpg")
-                                    
-                                    thumbnailRef.putData(thumbnailData, metadata: nil) { metadata, error in
-                                        if let error = error {
-                                            print("❌ [VideoEditor] Failed to upload thumbnail: \(error.localizedDescription)")
+                            if let thumbnailImage = generateThumbnail(from: result.output.url),
+                               let thumbnailData = thumbnailImage.jpegData(compressionQuality: 0.7) {
+                                let thumbnailRef = Storage.storage().reference()
+                                    .child("users/\(currentUser.uid)/projects/\(projectId)/thumbnail.jpg")
+                                
+                                // Create metadata for thumbnail
+                                let thumbnailMetadata = StorageMetadata()
+                                thumbnailMetadata.contentType = "image/jpeg"
+                                
+                                thumbnailRef.putData(thumbnailData, metadata: thumbnailMetadata) { metadata, error in
+                                    if let error = error {
+                                        print("❌ [VideoEditor] Failed to upload thumbnail: \(error.localizedDescription)")
+                                    } else {
+                                        print("📸 [VideoEditor] Thumbnail uploaded")
+                                        thumbnailRef.downloadURL { url, error in
+                                            if let thumbnailURL = url {
+                                                print("📸 [VideoEditor] Thumbnail URL: \(thumbnailURL.absoluteString)")
+                                                
+                                                // Update Firestore with thumbnail URL
+                                                let db = Firestore.firestore()
+                                                db.collection("projects").document(projectId).updateData([
+                                                    "thumbnailURL": thumbnailURL.absoluteString
+                                                ])
+                                            }
                                         }
                                     }
                                 }
@@ -276,6 +292,7 @@ struct VideoEditorView: View {
                                                         "height": result.task.video.size.height
                                                     ],
                                                     "finalVideoURL": downloadURL.absoluteString,
+                                                    "thumbnailURL": "",  // Will be updated after thumbnail upload
                                                     "title": "Untitled Project"
                                                 ]
                                                 
