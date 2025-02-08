@@ -183,15 +183,11 @@ struct MainTabView: View {
                         .navigationBarHidden(true)
                         .tag(0)
                     
-                    if selectedTab == 1 {
+                    Group {
                         CreateView()
                             .navigationBarHidden(true)
-                            .tag(1)
-                    } else {
-                        Color.clear
-                            .tag(1)
                     }
-                
+                    .tag(1)
                     
                     LibraryView()
                         .navigationBarHidden(true)
@@ -334,70 +330,144 @@ struct LandingView: View {
     @Binding var isAnimating: Bool
     @Binding var showSignUp: Bool
     @Binding var showLogin: Bool
+    @State private var gradientRotation: Double = 0
+    @State private var hoveredFeature: Int? = nil
+    
+    let timer = Timer.publish(every: 0.02, on: .main, in: .common).autoconnect()
     
     var body: some View {
-        ZStack {
-            // Background
-            Color.black.ignoresSafeArea()
-            
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 30) {
-                    // Logo Section
-                    VStack(spacing: 15) {
-                        HStack(spacing: 0) {
-                            Text("Press")
-                                .font(.system(size: 40, weight: .black))
-                                .foregroundColor(.white)
+        GeometryReader { geometry in
+            ZStack {
+                // Dynamic Background
+                Color.black.ignoresSafeArea()
+                
+                // Animated Gradient Background
+                RadialGradient(
+                    gradient: Gradient(colors: [Color.red.opacity(0.3), .clear]),
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: geometry.size.width
+                )
+                .rotationEffect(.degrees(gradientRotation))
+                .ignoresSafeArea()
+                .opacity(0.4)
+                
+                // Main Content
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        // Logo Section with Glowing Effect
+                        ZStack {
+                            // Glow Effect
+                            Circle()
+                                .fill(Color.red.opacity(0.15))
+                                .frame(width: 200, height: 200)
+                                .blur(radius: 30)
+                                .opacity(isAnimating ? 1 : 0)
                             
-                            Text("Reel")
-                                .font(.system(size: 40, weight: .black))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.red)
-                                )
+                            VStack(spacing: 15) {
+                                HStack(spacing: 0) {
+                                    Text("Press")
+                                        .font(.system(size: 48, weight: .black))
+                                        .foregroundColor(.white)
+                                    
+                                    Text("Reel")
+                                        .font(.system(size: 48, weight: .black))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color.red)
+                                                .shadow(color: Color.red.opacity(0.5), radius: 10, x: 0, y: 0)
+                                        )
+                                }
+                                .opacity(isAnimating ? 1 : 0)
+                                .scaleEffect(isAnimating ? 1 : 0.8)
+                                
+                                Text("News Video Editor")
+                                    .font(.title3)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .opacity(isAnimating ? 1 : 0)
+                            }
+                        }
+                        .padding(.top, 60)
+                        .padding(.bottom, 60)
+                        
+                        // Main Features with Modern Cards
+                        VStack(spacing: 20) {
+                            FeatureCard(index: 0, icon: "wand.and.stars", title: "AI-Powered Editing", description: "Let AI transform your footage into compelling stories", isHovered: hoveredFeature == 0)
+                                .onHover { isHovered in
+                                    withAnimation(.spring()) {
+                                        hoveredFeature = isHovered ? 0 : nil
+                                    }
+                                }
+                            
+                            FeatureCard(index: 1, icon: "clock.fill", title: "Quick Turnaround", description: "Create professional videos in minutes, not hours", isHovered: hoveredFeature == 1)
+                                .onHover { isHovered in
+                                    withAnimation(.spring()) {
+                                        hoveredFeature = isHovered ? 1 : nil
+                                    }
+                                }
+                            
+                            FeatureCard(index: 2, icon: "sparkles.tv.fill", title: "Professional Output", description: "Broadcast-ready videos with stunning quality", isHovered: hoveredFeature == 2)
+                                .onHover { isHovered in
+                                    withAnimation(.spring()) {
+                                        hoveredFeature = isHovered ? 2 : nil
+                                    }
+                                }
                         }
                         .opacity(isAnimating ? 1 : 0)
-                        .scaleEffect(isAnimating ? 1 : 0.8)
-                        
-                        Text("News Video Editor")
-                            .font(.headline)
-                            .foregroundColor(.white.opacity(0.8))
-                            .opacity(isAnimating ? 1 : 0)
-                    }
-                    .padding(.top, 60)
+                        .offset(y: isAnimating ? 0 : 40)
                     
-                    // Main Features
-                    VStack(spacing: 25) {
-                        FeatureItem(icon: "wand.and.stars.inverse", title: "AI-Powered Editing")
-                        FeatureItem(icon: "clock.fill", title: "Quick Turnaround")
-                        FeatureItem(icon: "sparkles.tv.fill", title: "Professional Output")
-                    }
-                    .padding(.top, 30)
-                    .opacity(isAnimating ? 1 : 0)
-                    .offset(y: isAnimating ? 0 : 20)
-                    
-                    // Action Buttons
-                    VStack(spacing: 16) {
-                        Button(action: { showSignUp.toggle() }) {
-                            Text("Get Started")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 54)
-                                .background(Color.red)
-                                .cornerRadius(16)
+                        // Action Buttons with Glass Effect
+                        VStack(spacing: 20) {
+                            Button(action: { showSignUp.toggle() }) {
+                                Text("Get Started")
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 60)
+                                    .background(
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 20)
+                                                .fill(Color.red)
+                                            
+                                            // Shine effect
+                                            RoundedRectangle(cornerRadius: 20)
+                                                .fill(
+                                                    LinearGradient(gradient: 
+                                                        Gradient(colors: [.white.opacity(0.2), .clear]),
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing)
+                                                )
+                                        }
+                                    )
+                                    .shadow(color: Color.red.opacity(0.5), radius: 20, x: 0, y: 10)
+                            }
+                            .buttonStyle(ScaleButtonStyle())
+                            
+                            Button(action: { showLogin.toggle() }) {
+                                Text("Sign In")
+                                    .font(.title3)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 60)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 20)
+                                            .fill(Color.white.opacity(0.05))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 20)
+                                                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                                            )
+                                    )
+                            }
+                            .buttonStyle(ScaleButtonStyle())
                         }
-                        
-                        Button(action: { showLogin.toggle() }) {
-                            Text("Sign In")
-                                .font(.headline)
-                                .foregroundColor(.white.opacity(0.9))
-                        }
-                    }
-                    .padding(.horizontal, 30)
-                    .padding(.top, 40)
+                        .padding(.horizontal, 30)
+                        .padding(.top, 60)
+                        .padding(.bottom, 40)
                     .opacity(isAnimating ? 1 : 0)
                     .offset(y: isAnimating ? 0 : 20)
                 }
@@ -410,6 +480,11 @@ struct LandingView: View {
                 isAnimating = true
             }
         }
+        .onReceive(timer) { _ in
+            withAnimation {
+                gradientRotation += 0.1
+            }
+        }
         .sheet(isPresented: $showSignUp) {
             AuthView(isLogin: false)
         }
@@ -419,28 +494,71 @@ struct LandingView: View {
     }
 }
 
-struct FeatureItem: View {
+// Modern Feature Card
+struct FeatureCard: View {
+    let index: Int
     let icon: String
     let title: String
+    let description: String
+    let isHovered: Bool
     
     var body: some View {
-        HStack(spacing: 20) {
-            Image(systemName: icon)
-                .font(.system(size: 22, weight: .medium))
-                .foregroundColor(.red)
-                .frame(width: 44, height: 44)
-                .background(Color.white.opacity(0.1))
-                .clipShape(Circle())
+        HStack(spacing: 25) {
+            // Icon with animated background
+            ZStack {
+                Circle()
+                    .fill(Color.red.opacity(0.1))
+                    .frame(width: 70, height: 70)
+                
+                Image(systemName: icon)
+                    .font(.system(size: 30, weight: .medium))
+                    .foregroundColor(.red)
+                    .symbolEffect(.bounce, options: .repeating, value: isHovered)
+            }
             
-            Text(title)
-                .font(.body)
-                .fontWeight(.medium)
-                .foregroundColor(.white)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                
+                Text(description)
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.7))
+                    .lineLimit(2)
+            }
             
             Spacer()
         }
+        .padding(.vertical, 25)
+        .padding(.horizontal, 25)
+        .background(
+            RoundedRectangle(cornerRadius: 25)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 25)
+                        .stroke(LinearGradient(
+                            gradient: Gradient(colors: [.red.opacity(isHovered ? 0.5 : 0.1), .clear]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ), lineWidth: 1)
+                )
+        )
+        .shadow(color: .red.opacity(isHovered ? 0.1 : 0), radius: 20, x: 0, y: 10)
+        .scaleEffect(isHovered ? 1.02 : 1)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
         .padding(.horizontal)
     }
+}
+
+// Custom Button Style with Scale Animation
+struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
 }
 
 struct PasswordStrengthView: View {
