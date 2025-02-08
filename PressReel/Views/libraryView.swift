@@ -7,6 +7,7 @@ import Kingfisher
 struct Project: Identifiable {
     let id: String
     let userId: String
+    let title: String
     let createdAt: Date
     let updatedAt: Date
     let editorState: [String: Any]
@@ -23,6 +24,7 @@ struct Project: Identifiable {
     init(id: String, data: [String: Any]) {
         self.id = id
         self.userId = data["userId"] as? String ?? ""
+        self.title = data["title"] as? String ?? "Untitled Project"
         self.createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
         self.updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date()
         self.editorState = data["editorState"] as? [String: Any] ?? [:]
@@ -162,6 +164,24 @@ struct ProjectCard: View {
     let project: Project
     @State private var isShowingVideo = false
     @State private var videoPlayer: AVPlayer?
+    @State private var isEditingTitle = false
+    @State private var editedTitle: String = ""
+    
+    private func updateProjectTitle(newTitle: String) {
+        guard !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        
+        let db = Firestore.firestore()
+        db.collection("projects").document(project.id).updateData([
+            "title": newTitle,
+            "updatedAt": Timestamp(date: Date())
+        ]) { error in
+            if let error = error {
+                print("❌ Error updating project title: \(error.localizedDescription)")
+            } else {
+                print("✅ Project title updated successfully")
+            }
+        }
+    }
     
     private var thumbnailView: some View {
         ZStack {
@@ -196,15 +216,54 @@ struct ProjectCard: View {
         }
     }
     
+    private func formattedDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
+    }
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             thumbnailView
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Group {
+                    if isEditingTitle {
+                        TextField("Project Title", text: $editedTitle, onCommit: {
+                            isEditingTitle = false
+                            if editedTitle != project.title {
+                                updateProjectTitle(newTitle: editedTitle)
+                            }
+                        })
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .font(.callout)
+                        .foregroundColor(.black)
+                    } else {
+                        Text(project.title)
+                            .font(.callout)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                            .onTapGesture {
+                                editedTitle = project.title
+                                isEditingTitle = true
+                            }
+                    }
+                }
+                
+                Text("Created \(formattedDate(project.createdAt))")
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
         }
-        .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.red)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .sheet(isPresented: $isShowingVideo) {
             if let player = videoPlayer {
                 VideoPlayer(player: player)

@@ -183,28 +183,15 @@ struct VideoEditorView: View {
                                         // Get thumbnail URL
                                         thumbnailRef.downloadURL { url, error in
                                             if let thumbnailURL = url?.absoluteString {
-                                                // Create project document with thumbnail and final video URL
-                                                let projectData: [String: Any] = [
-                                                    "userId": currentUser.uid,
-                                                    "createdAt": timestamp,
-                                                    "updatedAt": timestamp,
-                                                    "editorState": jsonDict,
-                                                    "segments": segmentsData,
-                                                    "videoSize": [
-                                                        "width": result.task.video.size.width,
-                                                        "height": result.task.video.size.height
-                                                    ],
-                                                    "thumbnailURL": thumbnailURL,
-                                                    "finalVideoURL": result.output.url.absoluteString
-                                                ]
-                                                
-                                                // Save to Firestore
+                                                // Update Firestore with thumbnail URL
                                                 let db = Firestore.firestore()
-                                                db.collection("projects").document(projectId).setData(projectData) { error in
+                                                db.collection("projects").document(projectId).updateData([
+                                                    "thumbnailURL": thumbnailURL
+                                                ]) { error in
                                                     if let error = error {
-                                                        print("❌ [VideoEditor] Failed to save project: \(error.localizedDescription)")
+                                                        print("❌ [VideoEditor] Failed to update thumbnail URL: \(error.localizedDescription)")
                                                     } else {
-                                                        print("📹 [VideoEditor] Project saved successfully with thumbnail")
+                                                        print("📹 [VideoEditor] Thumbnail URL updated successfully")
                                                     }
                                                 }
                                             }
@@ -224,7 +211,8 @@ struct VideoEditorView: View {
                                             "width": result.task.video.size.width,
                                             "height": result.task.video.size.height
                                         ],
-                                        "finalVideoURL": result.output.url.absoluteString
+                                        "finalVideoURL": result.output.url.absoluteString,
+                                        "title": "Untitled Project"
                                     ]
                                     
                                     // Save to Firestore
@@ -275,10 +263,33 @@ struct VideoEditorView: View {
                                         videoRef.downloadURL { url, error in
                                             if let downloadURL = url {
                                                 print("📹 [VideoEditor] Final video URL: \(downloadURL.absoluteString)")
-                                                // Update project with final video URL
+                                                
+                                                // Create project document with final video URL
+                                                let projectData: [String: Any] = [
+                                                    "userId": currentUser.uid,
+                                                    "createdAt": timestamp,
+                                                    "updatedAt": timestamp,
+                                                    "editorState": jsonDict,
+                                                    "segments": segmentsData,
+                                                    "videoSize": [
+                                                        "width": result.task.video.size.width,
+                                                        "height": result.task.video.size.height
+                                                    ],
+                                                    "finalVideoURL": downloadURL.absoluteString,
+                                                    "title": "Untitled Project"
+                                                ]
+                                                
+                                                // Save to Firestore
                                                 let db = Firestore.firestore()
-                                                db.collection("projects").document(projectId).updateData([
-                                                    "finalVideoUrl": downloadURL.absoluteString
+                                                db.collection("projects").document(projectId).setData(projectData) { error in
+                                                    if let error = error {
+                                                        print("❌ [VideoEditor] Failed to save project: \(error.localizedDescription)")
+                                                    } else {
+                                                        print("📹 [VideoEditor] Project saved successfully")
+                                                    }
+                                                }
+                     db.collection("projects").document(projectId).updateData([
+                                                    "finalVideoURL": downloadURL.absoluteString
                                                 ])
                                             }
                                             onComplete(result.output.url)
