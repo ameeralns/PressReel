@@ -16,6 +16,20 @@ service firebase.storage {
       allow write, delete: if request.auth != null && request.auth.uid == userId;
     }
     
+    // AI Reels specific storage rules
+    match /aiReels/{userId}/{reelId}/{assetType}/{fileName} {
+      // Allow read access to final videos and thumbnails
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // Allow write/delete for processing and final assets
+      allow write, delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Temporary processing assets for AI Reels
+    match /aiReels-temp/{userId}/{reelId}/{assetType}/{fileName} {
+      // Only allow access to the owner during processing
+      allow read, write, delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
     match /{allPaths=**} {
       allow read: if true;
     }

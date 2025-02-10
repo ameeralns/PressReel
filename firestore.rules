@@ -11,51 +11,97 @@ service cloud.firestore {
     // Videos collection rules
     match /videos/{videoId} {
       allow read: if true;
+      // Allow create if user is authenticated and setting their own userId
       allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Allow update/delete if user owns the document
       allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+    
+    // AI Reels collection rules
+    match /aiReels/{reelId} {
+      // Allow reading reels if:
+      // 1. User is authenticated and owns the reel
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      
+      // Allow creating reels if:
+      // 1. User is authenticated
+      // 2. They're setting their own userId
+      // 3. The reel has all required fields
+      allow create: if request.auth != null 
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasAll(['scriptId', 'status', 'progress', 'createdAt', 'updatedAt', 'voiceId', 'tone', 'userId']);
+      
+      // Allow updating reels if:
+      // 1. User owns the reel
+      // 2. They're not changing the userId or scriptId
+      allow update: if request.auth != null 
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.scriptId == resource.data.scriptId;
+      
+      // Allow deleting reels only if user owns the reel
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
     
     // Scripts collection rules
     match /scripts/{scriptId} {
+      // Allow reading scripts only if the user is authenticated and owns the script
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      
+      // Allow creating scripts only if:
+      // 1. User is authenticated
+      // 2. They're setting their own userId
+      // 3. The script has all required fields
       allow create: if request.auth != null 
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.keys().hasAll(['id', 'userId', 'newsItemId', 'content', 'createdAt', 'title', 'duration'])
-        && request.resource.data.duration == 60;
+        && request.resource.data.duration == 60;  // Ensure it's a 1-minute script
+      
+      // Allow updating scripts only if:
+      // 1. User owns the script
+      // 2. They're not changing the userId or newsItemId
       allow update: if request.auth != null 
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.newsItemId == resource.data.newsItemId;
+      
+      // Allow deleting scripts only if user owns the script
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
     
     // User-specific collections
     match /users/{userId} {
+      // Allow users to read their own data
       allow read: if request.auth != null && request.auth.uid == userId;
       
+      // Projects subcollection
       match /projects/{projectId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
       
+      // Videos subcollection
       match /videos/{videoId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
       
+      // Thumbnails subcollection
       match /thumbnails/{thumbnailId} {
+        // Allow any authenticated user to read thumbnails
         allow read: if request.auth != null;
+        // Only allow the owner to write thumbnails
         allow write: if request.auth != null && request.auth.uid == userId;
       }
-    }
-    
-    // Projects collection
-    match /projects/{projectId} {
-      allow read, write: if request.auth != null && 
-        (request.auth.uid == resource.data.userId || request.auth.uid == request.resource.data.userId);
     }
     
     // Default rule - deny everything else
     match /{document=**} {
       allow read, write: if false;
     }
+    
+    match /projects/{projectId} {
+      allow read, write: if request.auth != null && 
+        (request.auth.uid == resource.data.userId || request.auth.uid == request.resource.data.userId);
+    }
   }
 }
+

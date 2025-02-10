@@ -7,6 +7,11 @@ struct CreateView: View {
     @Environment(\.dismiss) var dismiss
     @State private var showImportView = false
     @State private var showAiReelSheet = false
+    let userId: String
+    
+    init(userId: String = "") {
+        self.userId = userId
+    }
     
     var body: some View {
         NavigationView {
@@ -146,7 +151,7 @@ struct CreateView: View {
                 ImportVideosView()
             }
             .sheet(isPresented: $showAiReelSheet) {
-                GenerateAiReelSheet()
+                GenerateAiReelSheet(userId: userId)
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -158,215 +163,6 @@ struct CreateView: View {
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
-    }
-}
-
-struct GenerateAiReelSheet: View {
-    @Environment(\.dismiss) var dismiss
-    @State private var script: String = ""
-    @State private var selectedVoice: Voice = .allVoices[0]
-    @State private var selectedTone: VideoTone = .professional
-    @State private var isGenerating = false
-    
-    // Sample voices (to be replaced with Eleven Labs voices)
-    struct Voice: Identifiable {
-        let id: String
-        let name: String
-        let gender: String
-        
-        static let allVoices: [Voice] = [
-            Voice(id: "v1", name: "Rachel", gender: "Female"),
-            Voice(id: "v2", name: "James", gender: "Male"),
-            Voice(id: "v3", name: "Emma", gender: "Female"),
-            Voice(id: "v4", name: "Michael", gender: "Male")
-        ]
-    }
-    
-    enum VideoTone: String, CaseIterable {
-        case professional = "Professional"
-        case casual = "Casual"
-        case dramatic = "Dramatic"
-        
-        var icon: String {
-            switch self {
-            case .professional: return "briefcase.fill"
-            case .casual: return "person.fill"
-            case .dramatic: return "theatermasks.fill"
-            }
-        }
-    }
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                // Background
-                Color.black.ignoresSafeArea()
-                
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 30) {
-                        // Header with Glow
-                        ZStack {
-                            // Glow Effect
-                            Circle()
-                                .fill(Color.red.opacity(0.3))
-                                .frame(width: 100, height: 100)
-                                .blur(radius: 20)
-                            
-                            Image(systemName: "wand.and.rays")
-                                .font(.system(size: 40, weight: .semibold))
-                                .foregroundColor(.red)
-                                .symbolEffect(.bounce, options: .repeating)
-                        }
-                        .padding(.top, 20)
-                        
-                        // Script Input
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Your Script")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            
-                            TextEditor(text: $script)
-                                .frame(height: 150)
-                                .padding()
-                                .background(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .fill(Color.white.opacity(0.05))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .strokeBorder(
-                                            LinearGradient(
-                                                gradient: Gradient(colors: [.red.opacity(0.6), .red.opacity(0.2)]),
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            ),
-                                            lineWidth: 1
-                                        )
-                                )
-                                .foregroundColor(.white)
-                        }
-                        .padding(.horizontal)
-                        
-                        // Voice Selection
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Choose Voice")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(Voice.allVoices) { voice in
-                                        VStack {
-                                            Circle()
-                                                .fill(selectedVoice.id == voice.id ? Color.red : Color.white.opacity(0.05))
-                                                .frame(width: 60, height: 60)
-                                                .overlay(
-                                                    Image(systemName: "waveform")
-                                                        .foregroundColor(selectedVoice.id == voice.id ? .white : .red)
-                                                )
-                                            
-                                            Text(voice.name)
-                                                .font(.subheadline)
-                                                .foregroundColor(.white)
-                                            
-                                            Text(voice.gender)
-                                                .font(.caption)
-                                                .foregroundColor(.white.opacity(0.7))
-                                        }
-                                        .padding()
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 16)
-                                                .fill(Color.white.opacity(0.05))
-                                        )
-                                        .onTapGesture {
-                                            selectedVoice = voice
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal)
-                            }
-                        }
-                        .padding(.horizontal)
-                        
-                        // Tone Selection
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Video Tone")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            
-                            HStack(spacing: 12) {
-                                ForEach(VideoTone.allCases, id: \.self) { tone in
-                                    VStack {
-                                        Image(systemName: tone.icon)
-                                            .font(.system(size: 24))
-                                            .foregroundColor(selectedTone == tone ? .white : .red)
-                                            .frame(width: 50, height: 50)
-                                            .background(
-                                                Circle()
-                                                    .fill(selectedTone == tone ? Color.red : Color.white.opacity(0.05))
-                                            )
-                                        
-                                        Text(tone.rawValue)
-                                            .font(.subheadline)
-                                            .foregroundColor(.white)
-                                    }
-                                    .padding()
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 16)
-                                            .fill(Color.white.opacity(0.05))
-                                    )
-                                    .onTapGesture {
-                                        selectedTone = tone
-                                    }
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
-                        .padding(.horizontal)
-                        
-                        // Generate Button
-                        Button(action: {
-                            isGenerating = true
-                            // Generation logic will go here
-                        }) {
-                            HStack {
-                                if isGenerating {
-                                    ProgressView()
-                                        .tint(.white)
-                                } else {
-                                    Image(systemName: "wand.and.stars")
-                                    Text("Generate Video")
-                                }
-                            }
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [.red, .red.opacity(0.8)]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .cornerRadius(16)
-                            .padding(.horizontal)
-                        }
-                        .disabled(script.isEmpty || isGenerating)
-                        .opacity(script.isEmpty ? 0.5 : 1.0)
-                    }
-                    .padding(.bottom, 30)
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                    .foregroundColor(.white)
-                }
-            }
-        }
     }
 }
 

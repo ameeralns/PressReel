@@ -1,0 +1,179 @@
+Data Models & Basic UI First
+- Start with this because:
+- Establishes foundation
+- Can build UI without backend
+- Allows for UI testing with mock data
+- Gets user flow right early
+    // New Models
+    1. AiReel model
+    2. ReelStatus enums
+    3. ViewModels setup
+
+    // Basic UI Components
+    1. Update CreateView with new button
+    2. GenerateAiReelSheet
+    3. ProcessingModal
+    4. AiReelsView tab
+
+2. Firebase Structure & Basic Functions
+- Next because:
+- Sets up data structure
+- Enables real-time updates
+- Creates backend foundation
+- Can test with simple responses
+- handling
+    // Firebase Setup
+    1. aiReels collection
+    2. Storage structure
+    3. Basic security rules
+
+    // Initial Cloud Functions
+    1. generateAiReel (basic version)
+    2. updateReelStatus
+    3. Basic error handling
+    
+3. Core Pipeline Components
+- Then:
+- Individual service integrations
+- Can test each part separately
+- Easier to debug
+- Validate each step
+    // API Integrations
+    1. Eleven Labs setup
+    2. Storyblocks integration
+    3. FFmpeg configuration
+
+    // Processing Functions
+    1. Script analysis
+    2. Voiceover generation
+    3. Media fetching
+
+4. Video Assembly Pipeline
+- After that:
+- Combines previous components
+- Can test full flow
+- Optimize performance
+- Handle edge cases
+    // Assembly Pipeline
+    1. Video generation logic
+    2. Asset combination
+    3. Final rendering
+    4. Storage management
+
+5. Polish & Optimization
+- Finally:
+- Error handling
+- Performance improvements
+- User experience refinements
+- Production readiness
+    1. Enhanced error handling
+    2. Progress tracking
+    3. Retry mechanisms
+    4. Loading states
+    5. Success animations
+
+--------------------------------
+
+User Journey & Server-Side Flow
+1. Script Generation/Input
+    // User Side:
+    User finds article in FeedView
+    Clicks "Generate Script" (existing feature)
+    Gets AI-generated script
+    Or navigates directly to CreateView to paste their own script
+    // Server Side:
+    - OpenAI API processes article
+    - Returns optimized 30-second script
+    - Stores in Firestore (scripts collection)
+
+2. Initiating Video Creation
+    // User Side:
+    Navigates to CreateView
+    Clicks "Generate AI Reel"
+    // Sheet appears with:
+    - Script input/paste field
+    - Voice selection (Eleven Labs voices)
+    - Tone selection (Professional/Casual/Dramatic)
+    - Clicks "Generate"
+    
+    // Server Side:
+    - 1. generateAiReel function triggers:
+    - Creates new document in aiReels collection
+    - Generates unique reelId
+    - Sets initial status to 'processing'
+    - Returns reelId to app for tracking
+
+3. Processing Stage
+    // User Side:
+    Sees processing modal with:
+    - Current status
+    - Progress percentage
+    - Cancel button
+    - Animated indicators
+    - Server Side:
+    1. Script Analysis:
+   - OpenAI processes script
+   - Determines key moments
+   - Extracts keywords
+   - Creates timing map
+   Status: "Analyzing script..." (10%)
+
+2. Parallel Processing:
+   a. Voiceover Generation:
+      - Eleven Labs generates audio
+      - Stores in temp storage
+      Status: "Generating voiceover..." (30%)
+
+   b. Media Collection:
+      - Queries Storyblocks API
+      - Filters results
+      - Downloads assets
+      Status: "Gathering visuals..." (50%)
+
+3. Video Assembly:
+   - FFmpeg combines assets:
+     - Aligns media with script
+     - Adds transitions
+     - Overlays voiceover
+     - Adds background music
+   Status: "Creating video..." (70%)
+
+4. Final Processing:
+   - Renders final MP4
+   - Generates thumbnail
+   - Uploads to Firebase Storage
+   Status: "Finalizing..." (90%)
+
+4. Completion
+    // User Side:
+    Sees success animation
+    Video appears in AI Reels tab
+    Can play/share video
+    // Server Side:
+    1. Final Updates:
+    - Updates aiReels document status to 'completed'
+    - Stores final video URL
+    - Stores thumbnail URL
+    - Updates user's quota/usage
+
+    2. Cleanup:
+    - Removes temporary files
+    - Logs completion metrics
+
+Cancellation Flow
+    // User Side:
+    Clicks cancel button
+    Immediate UI response
+    Returns to creation screen
+
+    // Server Side:
+    1. Immediate Actions:
+    - Stops all active processes
+    - Cancels API calls
+    - Updates status to 'cancelled'
+
+    2. Cleanup:
+    - Removes temporary files
+    - Releases resources
+    - Updates usage metrics
+    
