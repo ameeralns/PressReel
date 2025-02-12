@@ -45,20 +45,44 @@ struct Project: Identifiable {
     }
 }
 
+// MARK: - AI Reel Model
+struct AIReel: Identifiable {
+    let id: String
+    let userId: String
+    let createdAt: Date
+    let thumbnailURL: String
+    let videoURL: String
+    
+    init(id: String, data: [String: Any]) {
+        self.id = id
+        self.userId = data["userId"] as? String ?? ""
+        self.createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+        self.thumbnailURL = data["thumbnailURL"] as? String ?? ""
+        self.videoURL = data["videoURL"] as? String ?? ""
+    }
+}
+
 @MainActor
 class LibraryViewModel: ObservableObject {
     @Published var projects: [Project] = []
-    private var listener: ListenerRegistration? {
-        willSet {
-            listener?.remove()
-        }
+    @Published var aiReels: [AIReel] = []
+    private var projectsListener: ListenerRegistration?
+    private var reelsListener: ListenerRegistration?
+    
+    private func cleanup() {
+        projectsListener?.remove()
+        reelsListener?.remove()
+        projectsListener = nil
+        reelsListener = nil
     }
     
     func startListening(userId: String) {
         let db = Firestore.firestore()
-        listener = db.collection("projects")
+        
+        // Listen for projects
+        projectsListener = db.collection("projects")
             .whereField("userId", isEqualTo: userId)
-            .addSnapshotListener { [weak self] snapshot, error in
+            .addSnapshotListener { [weak self] (snapshot: QuerySnapshot?, error: Error?) in
                 Task { @MainActor [weak self] in
                     guard let self = self else { return }
                     
@@ -74,11 +98,33 @@ class LibraryViewModel: ObservableObject {
                     }
                 }
             }
+        
+        // Listen for AI Reels
+        reelsListener = db.collection("aiReels")
+            .whereField("userId", isEqualTo: userId)
+            .order(by: "createdAt", descending: true)
+            .addSnapshotListener { [weak self] (snapshot: QuerySnapshot?, error: Error?) in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    
+                    if let error = error {
+                        print("❌ Error fetching AI Reels: \(error.localizedDescription)")
+                        return
+                    }
+                    
+                    guard let documents = snapshot?.documents else { return }
+                    
+                    self.aiReels = documents.map { doc in
+                        AIReel(id: doc.documentID, data: doc.data())
+                    }
+                }
+            }
     }
     
     deinit {
-        // The willSet observer will handle cleanup
-        listener = nil
+        Task { @MainActor in
+            cleanup()
+        }
     }
 }
 
@@ -88,7 +134,9 @@ struct LibraryView: View {
     @State private var showProfile = false
     @StateObject private var viewModel = LibraryViewModel()
     @StateObject private var authService = AuthenticationService()
-    let filters = ["All", "In Progress", "Published"]
+    let filters = ["Projects", "AI Reels"]
+    @State private var isAIReelsActive = false
+    @State private var animationProgress: CGFloat = 0
     
     private func setupProjectsListener() {
         guard let userId = authService.user?.uid else { return }
@@ -97,7 +145,43 @@ struct LibraryView: View {
     
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            // Dynamic background
+            Color.black
+                .overlay(
+                    ZStack {
+                        // Futuristic grid pattern
+                        GeometryReader { geometry in
+                            Path { path in
+                                let spacing: CGFloat = 40
+                                for x in stride(from: 0, through: geometry.size.width, by: spacing) {
+                                    path.move(to: CGPoint(x: x, y: 0))
+                                    path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                                }
+                                for y in stride(from: 0, through: geometry.size.height, by: spacing) {
+                                    path.move(to: CGPoint(x: 0, y: y))
+                                    path.addLine(to: CGPoint(x: geometry.size.width, y: y))
+                                }
+                            }
+                            .stroke(Color.red.opacity(0.1), lineWidth: 0.5)
+                            .opacity(isAIReelsActive ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.5), value: isAIReelsActive)
+                        }
+                        
+                        // Animated gradient overlay
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.red.opacity(0.1),
+                                Color.black.opacity(0.3),
+                                Color.red.opacity(0.1)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .opacity(isAIReelsActive ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.5), value: isAIReelsActive)
+                    }
+                )
+                .ignoresSafeArea()
             
             VStack(spacing: 16) {
                 // Navigation Bar
@@ -106,6 +190,14 @@ struct LibraryView: View {
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
+                        .overlay(
+                            Text("AI")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.red)
+                                .offset(x: 10, y: -10)
+                                .opacity(isAIReelsActive ? 1 : 0)
+                                .scaleEffect(isAIReelsActive ? 1 : 0.5)
+                        )
                     
                     Spacer()
                     
@@ -114,7 +206,7 @@ struct LibraryView: View {
                     }) {
                         HStack(spacing: 8) {
                             Circle()
-                                .fill(Color.white.opacity(0.1))
+                                .fill(Color.white.opacity(isAIReelsActive ? 0.15 : 0.1))
                                 .frame(width: 32, height: 32)
                                 .overlay(
                                     Text(String((authService.user?.displayName?.prefix(1) ?? "U").uppercased()))
@@ -128,7 +220,7 @@ struct LibraryView: View {
                         }
                         .padding(.vertical, 4)
                         .padding(.horizontal, 8)
-                        .background(Color.white.opacity(0.05))
+                        .background(Color.white.opacity(isAIReelsActive ? 0.15 : 0.05))
                         .cornerRadius(20)
                     }
                 }
@@ -140,8 +232,9 @@ struct LibraryView: View {
                     HStack(spacing: 12) {
                         ForEach(0..<filters.count, id: \ .self) { index in
                             Button(action: {
-                                withAnimation {
+                                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
                                     selectedFilter = index
+                                    isAIReelsActive = index == 1
                                 }
                             }) {
                                 Text(filters[index])
@@ -154,27 +247,96 @@ struct LibraryView: View {
                                         RoundedRectangle(cornerRadius: 20)
                                             .fill(selectedFilter == index ? Color.red : Color.white.opacity(0.1))
                                     )
+                                    .scaleEffect(selectedFilter == index ? 1.05 : 1.0)
                             }
                         }
                     }
                     .padding(.horizontal)
                 }
                 
-                ScrollView {
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 16) {
-                        ForEach(viewModel.projects) { project in
-                            ProjectCard(project: project, onUpdate: {})
+                if selectedFilter == 0 {
+                    // Projects Tab
+                    ScrollView {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 16) {
+                            ForEach(viewModel.projects) { project in
+                                ProjectCard(project: project, onUpdate: {})
+                                    .transition(.asymmetric(
+                                        insertion: .scale.combined(with: .opacity),
+                                        removal: .scale.combined(with: .opacity)
+                                    ))
+                            }
+                        }
+                        .padding()
+                    }
+                    .onAppear {
+                        setupProjectsListener()
+                    }
+                } else {
+                    // AI Reels Tab
+                    ScrollView {
+                        if viewModel.aiReels.isEmpty {
+                            // Show empty state
+                            VStack {
+                                Spacer()
+                                
+                                // Futuristic AI Icon
+                                Circle()
+                                    .fill(Color.red.opacity(0.1))
+                                    .frame(width: 120, height: 120)
+                                    .overlay(
+                                        ZStack {
+                                            ForEach(0..<3) { i in
+                                                Circle()
+                                                    .stroke(Color.red.opacity(0.3), lineWidth: 2)
+                                                    .frame(width: 80 + CGFloat(i * 20), height: 80 + CGFloat(i * 20))
+                                                    .scaleEffect(animationProgress)
+                                            }
+                                            
+                                            Image(systemName: "waveform")
+                                                .font(.system(size: 40))
+                                                .foregroundColor(.red)
+                                        }
+                                    )
+                                
+                                Text("No AI Reels Yet")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .padding(.top, 24)
+                                
+                                Text("Your AI-generated reels will appear here")
+                                    .font(.subheadline)
+                                    .foregroundColor(.white.opacity(0.6))
+                                    .padding(.top, 4)
+                                
+                                Spacer()
+                            }
+                            .onAppear {
+                                withAnimation(Animation.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                                    animationProgress = 1.2
+                                }
+                            }
+                            .onDisappear {
+                                animationProgress = 0
+                            }
+                        } else {
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 2) {
+                                ForEach(viewModel.aiReels) { reel in
+                                    AIReelThumbnailView(reel: reel)
+                                }
+                            }
                         }
                     }
-                    .padding()
-                }
-                .onAppear {
-                    setupProjectsListener()
                 }
             }
+            .animation(.easeInOut(duration: 0.3), value: selectedFilter)
         }
         .sheet(isPresented: $showProfile) {
             ProfileView(isPresented: $showProfile)
@@ -589,5 +751,142 @@ struct ProjectCard: View {
             await videoPlayerViewModel.loadVideo(url: url)
         }
         isShowingVideo = true
+    }
+}
+
+struct AIReelThumbnailView: View {
+    let reel: AIReel
+    @State private var isShowingVideo = false
+    @State private var isExporting = false
+    @StateObject private var videoPlayerViewModel = VideoPlayerViewModel()
+    
+    private func exportVideo() async {
+        isExporting = true
+        defer { isExporting = false }
+        
+        guard let videoURL = URL(string: reel.videoURL) else { return }
+        
+        let storage = Storage.storage()
+        // Construct the storage path from the URL components
+        let storagePath = "users/\(reel.userId)/reels/\(reel.id)/final.mp4"
+        let reference = storage.reference().child(storagePath)
+        
+        do {
+            // Get the temporary local URL for the video
+            let localURL = FileManager.default.temporaryDirectory.appendingPathComponent("reel-\(reel.id).mp4")
+            _ = try await reference.writeAsync(toFile: localURL)
+            
+            // Share the video using UIActivityViewController
+            await MainActor.run {
+                let activityVC = UIActivityViewController(activityItems: [localURL], applicationActivities: nil)
+                
+                // Present the share sheet
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = windowScene.windows.first,
+                   let rootViewController = window.rootViewController {
+                    rootViewController.present(activityVC, animated: true)
+                }
+            }
+        } catch {
+            print("❌ Error exporting video: \(error.localizedDescription)")
+        }
+    }
+    
+    var body: some View {
+        Button(action: {
+            isShowingVideo = true
+        }) {
+            KFImage(URL(string: reel.thumbnailURL))
+                .resizable()
+                .aspectRatio(9/16, contentMode: .fill)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .overlay(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            Color.black.opacity(0.3),
+                            Color.clear,
+                            Color.black.opacity(0.3)
+                        ]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .opacity(0.8)
+                )
+                .overlay(
+                    Group {
+                        if isExporting {
+                            ZStack {
+                                Color.black.opacity(0.7)
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .red))
+                            }
+                        }
+                    }
+                )
+                .cornerRadius(12)
+                .shadow(color: Color.red.opacity(0.3), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(ScaledButtonStyle())
+        .contextMenu {
+            Button(action: {
+                Task {
+                    await exportVideo()
+                }
+            }) {
+                Label("Export Video", systemImage: "square.and.arrow.up")
+            }
+        }
+        .sheet(isPresented: $isShowingVideo) {
+            if let videoURL = URL(string: reel.videoURL) {
+                GeometryReader { geometry in
+                    ZStack {
+                        Color.black.edgesIgnoringSafeArea(.all)
+                        
+                        if let error = videoPlayerViewModel.error {
+                            VStack(spacing: 12) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.red)
+                                    .font(.system(size: 40))
+                                Text(error.localizedDescription)
+                                    .foregroundColor(.red)
+                                    .font(.headline)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                            }
+                        } else if let player = videoPlayerViewModel.player {
+                            if videoPlayerViewModel.isVideoReady {
+                                VideoPlayer(player: player)
+                                    .ignoresSafeArea()
+                                    .onDisappear {
+                                        videoPlayerViewModel.cleanup()
+                                    }
+                            } else {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .red))
+                            }
+                        }
+                    }
+                }
+                .onAppear {
+                    Task {
+                        await videoPlayerViewModel.loadVideo(url: videoURL)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct ScaledButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: configuration.isPressed)
     }
 }
