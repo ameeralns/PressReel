@@ -26,6 +26,7 @@ import axios from 'axios';
 import { TempFileManager } from './utils/tempFileManager';
 import { Bucket } from '@google-cloud/storage';
 import path from 'path';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 
 // Configure port for Cloud Run
 const port = process.env.PORT || 8080;
@@ -418,5 +419,72 @@ export const getElevenLabsVoicesV2 = onCall(async () => {
     console.error('Error in getElevenLabsVoices function:', error);
     console.error('Error stack:', error.stack);
     throw new HttpsError('internal', `Failed to fetch voices: ${error.message}`);
+  }
+});
+
+// Scheduled function to fetch news every 5 hours
+export const fetchLatestNews = onSchedule({
+  schedule: "every 5 hours",
+  timeZone: "UTC",
+  retryCount: 3,
+  memory: "256MiB",
+}, async (event) => {
+  try {
+    console.log('Starting scheduled news fetch...');
+    
+    // Validate API key
+    const currentsApiKey = process.env.CURRENTS_API_KEY;
+    if (!currentsApiKey) {
+      throw new Error('Missing CURRENTS_API_KEY in environment variables');
+    }
+
+    // Fetch latest news
+    const response = await axios.get(`https://api.currentsapi.services/v1/latest-news?apiKey=${currentsApiKey}&language=en`);
+    
+    if (!response.data || !response.data.news) {
+      throw new Error('Invalid response from Currents API');
+    }
+
+    const batch = admin.firestore().batch();
+    const newsCollection = admin.firestore().collection('news');
+
+    // Process each news item
+    for (const item of response.data.news) {
+      const newsItem = {
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        url: item.url,
+        author: item.author,
+        image: item.image,
+        language: item.language,
+        category: item.category,
+        published: new Date(item.published),
+        likes: 0,
+        saves: 0,
+        userInteractions: {},
+        // Add searchable fields for better querying
+        searchableText: `${item.title} ${item.description}`
+          .toLowerCase()
+          .split(/\W+/)
+          .filter((word: string) => word.length > 0),
+        searchableTitle: item.title
+          .toLowerCase()
+          .split(/\W+/)
+          .filter((word: string) => word.length > 0),
+        updatedAt: FieldValue.serverTimestamp()
+      };
+
+      const docRef = newsCollection.doc(item.id);
+      batch.set(docRef, newsItem, { merge: true });
+    }
+
+    // Commit the batch
+    await batch.commit();
+    console.log(`Successfully updated ${response.data.news.length} news articles`);
+
+  } catch (error) {
+    console.error('Error in fetchLatestNews scheduled function:', error);
+    throw error; // Retrying will be handled by Cloud Functions
   }
 });
