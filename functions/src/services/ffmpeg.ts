@@ -389,131 +389,176 @@ export class FFmpegService {
     const voiceVolume = 1.0;
     const musicVolume = backgroundMusicPath ? 0.3 : 0;
 
+    // Get voiceover duration
+    const voiceoverDuration = await new Promise<number>((resolve, reject) => {
+        ffmpeg.ffprobe(voiceoverPath, (err, metadata) => {
+            if (err || !metadata?.format?.duration) {
+                reject(new Error(`Failed to get voiceover duration: ${err?.message || 'Invalid metadata'}`));
+                return;
+            }
+            resolve(metadata.format.duration);
+        });
+    });
+
+    console.log('Voiceover duration:', voiceoverDuration);
+
     // Verify input files have valid streams
     await Promise.all([
-      this.verifyMediaFile(videoPath, 'video'),
-      this.verifyMediaFile(voiceoverPath, 'audio'),
-      ...(backgroundMusicPath ? [this.verifyMediaFile(backgroundMusicPath, 'audio')] : [])
+        this.verifyMediaFile(videoPath, 'video'),
+        this.verifyMediaFile(voiceoverPath, 'audio'),
+        ...(backgroundMusicPath ? [this.verifyMediaFile(backgroundMusicPath, 'audio')] : [])
     ]);
 
     return new Promise((resolve, reject) => {
-      let command = ffmpeg(videoPath)
-        .input(voiceoverPath);
+        let command = ffmpeg(videoPath)
+            .input(voiceoverPath);
 
-      if (backgroundMusicPath) {
-        command = command.input(backgroundMusicPath);
-      }
+        if (backgroundMusicPath) {
+            command = command.input(backgroundMusicPath);
+        }
 
-      // Define type for filter complex
-      type FilterComplexEntry = {
-        filter: string;
-        options: string | Record<string, string | number>;
-        inputs: string | string[];
-        outputs: string[];
-      };
+        // Define type for filter complex
+        type FilterComplexEntry = {
+            filter: string;
+            options: string | Record<string, string | number>;
+            inputs: string | string[];
+            outputs: string[];
+        };
 
-      // Build filter complex array with proper typing
-      const filterComplex: FilterComplexEntry[] = [];
-      
-      // Add subtitle filter first
-      filterComplex.push({
-        filter: 'subtitles',
-        options: {
-          filename: captionsPath,
-          force_style: 'Fontsize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Bold=1'
-        },
-        inputs: '0:v',
-        outputs: ['subtitled']
-      });
-      
-      if (backgroundMusicPath) {
-        // When we have background music, create a more complex mixing setup
-        filterComplex.push(
-          {
-            filter: 'volume',
-            options: voiceVolume.toString(),
-            inputs: '1:a',
-            outputs: ['voice']
-          },
-          {
-            filter: 'volume',
-            options: musicVolume.toString(),
-            inputs: '2:a',
-            outputs: ['music']
-          },
-          {
-            filter: 'amix',
-            options: { inputs: 2, duration: 'longest' },
-            inputs: ['voice', 'music'],
-            outputs: ['final_audio']
-          }
-        );
-      } else {
-        // Simple volume adjustment for voiceover only
+        // Build filter complex array with proper typing
+        const filterComplex: FilterComplexEntry[] = [];
+        
+        // Add video duration trim first
         filterComplex.push({
-          filter: 'volume',
-          options: voiceVolume.toString(),
-          inputs: '1:a',
-          outputs: ['final_audio']
-        });
-      }
-
-      // Clear any existing output options to prevent duplicates
-      command.outputOptions([]);
-
-      // Apply complex filter and map the outputs
-      command
-        .complexFilter(filterComplex)
-        .outputOptions([
-          '-map', '[subtitled]', // Map video with subtitles
-          '-map', '[final_audio]', // Map our mixed audio output
-          '-c:v', 'libx264', // Use H.264 codec for video
-          '-c:a', 'aac', // Use AAC for audio
-          '-b:a', '192k', // Audio bitrate
-          '-ac', '2', // Stereo audio
-          '-ar', '48000', // Audio sample rate
-          '-shortest', // Match shortest input duration
-          '-max_muxing_queue_size', '1024',
-          '-movflags', '+faststart'
-        ])
-        .on('start', cmd => {
-          console.log('Final assembly command:', cmd);
-          console.log('Filter complex:', JSON.stringify(filterComplex, null, 2));
-        })
-        .on('progress', progress => console.log('Final assembly progress:', progress))
-        .on('stderr', line => console.log('FFmpeg stderr:', line))
-        .on('error', (err, stdout, stderr) => {
-          console.error('Final assembly error:', {
-            error: err.message,
-            stdout,
-            stderr
-          });
-          reject(new Error(`Final assembly failed: ${err.message}`));
-        })
-        .on('end', async () => {
-          try {
-            // Verify the output file
-            if (!fs.existsSync(outputPath)) {
-              throw new Error('Output file not created');
-            }
-            
-            const stats = fs.statSync(outputPath);
-            if (stats.size === 0) {
-              throw new Error('Output file is empty');
-            }
-
-            // Verify the output has both video and audio streams
-            await this.verifyMediaFile(outputPath, 'video');
-            await this.verifyMediaFile(outputPath, 'audio');
-            
-            console.log('✅ Final video assembly completed successfully');
-            resolve(outputPath);
-          } catch (error) {
-            reject(error);
-          }
+            filter: 'trim',
+            options: `duration=${voiceoverDuration}`,
+            inputs: '0:v',
+            outputs: ['trimmed']
         });
 
-      command.save(outputPath);
+        // Add subtitle filter after trimming
+        filterComplex.push({
+            filter: 'subtitles',
+            options: {
+                filename: captionsPath,
+                force_style: 'Fontsize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Bold=1'
+            },
+            inputs: 'trimmed',
+            outputs: ['subtitled']
+        });
+        
+        if (backgroundMusicPath) {
+            // When we have background music, create a more complex mixing setup
+            filterComplex.push(
+                {
+                    filter: 'volume',
+                    options: voiceVolume.toString(),
+                    inputs: '1:a',
+                    outputs: ['voice']
+                },
+                {
+                    filter: 'volume',
+                    options: musicVolume.toString(),
+                    inputs: '2:a',
+                    outputs: ['music']
+                },
+                {
+                    filter: 'atrim',
+                    options: `duration=${voiceoverDuration}`,
+                    inputs: 'music',
+                    outputs: ['music_trimmed']
+                },
+                {
+                    filter: 'amix',
+                    options: { inputs: 2, duration: 'first' },
+                    inputs: ['voice', 'music_trimmed'],
+                    outputs: ['final_audio']
+                }
+            );
+        } else {
+            // Simple volume adjustment for voiceover only
+            filterComplex.push({
+                filter: 'volume',
+                options: voiceVolume.toString(),
+                inputs: '1:a',
+                outputs: ['final_audio']
+            });
+        }
+
+        // Clear any existing output options to prevent duplicates
+        command.outputOptions([]);
+
+        // Apply complex filter and map the outputs
+        command
+            .complexFilter(filterComplex)
+            .outputOptions([
+                '-map', '[subtitled]', // Map video with subtitles
+                '-map', '[final_audio]', // Map our mixed audio output
+                '-c:v', 'libx264', // Use H.264 codec for video
+                '-c:a', 'aac', // Use AAC for audio
+                '-b:a', '192k', // Audio bitrate
+                '-ac', '2', // Stereo audio
+                '-ar', '48000', // Audio sample rate
+                '-shortest', // Match shortest input duration
+                '-max_muxing_queue_size', '1024',
+                '-movflags', '+faststart'
+            ])
+            .on('start', cmd => {
+                console.log('Final assembly command:', cmd);
+                console.log('Filter complex:', JSON.stringify(filterComplex, null, 2));
+            })
+            .on('progress', progress => console.log('Final assembly progress:', progress))
+            .on('stderr', line => console.log('FFmpeg stderr:', line))
+            .on('error', (err, stdout, stderr) => {
+                console.error('Final assembly error:', {
+                    error: err.message,
+                    stdout,
+                    stderr
+                });
+                reject(new Error(`Final assembly failed: ${err.message}`));
+            })
+            .on('end', async () => {
+                try {
+                    // Verify the output file
+                    if (!fs.existsSync(outputPath)) {
+                        throw new Error('Output file not created');
+                    }
+                    
+                    const stats = fs.statSync(outputPath);
+                    if (stats.size === 0) {
+                        throw new Error('Output file is empty');
+                    }
+
+                    // Verify the output has both video and audio streams
+                    await this.verifyMediaFile(outputPath, 'video');
+                    await this.verifyMediaFile(outputPath, 'audio');
+                    
+                    // Verify final duration matches voiceover
+                    const finalDuration = await new Promise<number>((resolve, reject) => {
+                        ffmpeg.ffprobe(outputPath, (err, metadata) => {
+                            if (err || !metadata?.format?.duration) {
+                                reject(new Error(`Failed to verify final duration: ${err?.message || 'Invalid metadata'}`));
+                                return;
+                            }
+                            resolve(metadata.format.duration);
+                        });
+                    });
+
+                    if (Math.abs(finalDuration - voiceoverDuration) > 0.5) { // Allow 0.5s tolerance
+                        console.warn('Final duration mismatch:', {
+                            expected: voiceoverDuration,
+                            actual: finalDuration
+                        });
+                    }
+                    
+                    console.log('✅ Final video assembly completed successfully');
+                    resolve(outputPath);
+                } catch (error) {
+                    reject(error);
+                }
+            });
+
+        command.save(outputPath);
     });
   }
 
