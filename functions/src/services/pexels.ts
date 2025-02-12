@@ -38,15 +38,6 @@ interface PexelsImage {
   };
 }
 
-type VisualType = 'b-roll' | 'static' | 'talking' | 'overlay';
-type Mood = 'dramatic' | 'professional' | 'urgent' | 'reflective' | 'inspirational';
-
-interface ScriptContext {
-  mainTopic: string;
-  domain: string;
-  setting: string;
-}
-
 export class PexelsService {
   private readonly apiKey: string;
   private readonly videoBaseURL = 'https://api.pexels.com/videos';
@@ -139,246 +130,96 @@ export class PexelsService {
     }
   }
 
-  private extractScriptContext(scene: VideoScene): ScriptContext {
-    const governmentTerms = ['federal', 'government', 'white house', 'office', 'administration'];
-    const businessTerms = ['corporate', 'business', 'professional', 'workplace'];
-    
-    const description = scene.description.toLowerCase();
-    const primaryKeywords = scene.primaryKeywords.map(k => k.toLowerCase());
-    const secondaryKeywords = scene.secondaryKeywords.map(k => k.toLowerCase());
-    
-    // Determine the main topic and domain
-    const isGovernment = [...governmentTerms, 'federal', 'government']
-      .some(term => description.includes(term) || 
-            primaryKeywords.some(k => k.includes(term)) ||
-            secondaryKeywords.some(k => k.includes(term)));
-
-    const isBusiness = !isGovernment && businessTerms
-      .some(term => description.includes(term) || 
-            primaryKeywords.some(k => k.includes(term)) ||
-            secondaryKeywords.some(k => k.includes(term)));
-
-    return {
-      mainTopic: isGovernment ? 'government' : (isBusiness ? 'business' : 'professional'),
-      domain: isGovernment ? 'federal workplace' : (isBusiness ? 'corporate office' : 'office'),
-      setting: isGovernment ? 'government building' : (isBusiness ? 'corporate building' : 'office building')
-    };
-  }
-
-  private extractConcepts(description: string): string[] {
-    const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by']);
-    const words = description.toLowerCase()
-      .replace(/[^\w\s]/g, '')
-      .split(' ')
-      .filter(word => !stopWords.has(word));
-    
-    const conceptGroups: { [key: string]: string[] } = {
-      government: [
-        'federal', 'government', 'administration', 'white', 'house', 'agency', 'department',
-        'official', 'public', 'service', 'policy'
-      ],
-      business: [
-        'office', 'corporate', 'business', 'professional', 'work', 'working', 'workplace',
-        'desk', 'meeting', 'conference'
-      ],
-      people: [
-        'employee', 'worker', 'staff', 'person', 'people', 'group', 'team', 'executive',
-        'manager', 'professional', 'colleague'
-      ],
-      action: [
-        'leaving', 'exiting', 'walking', 'working', 'meeting', 'discussing', 'presenting',
-        'typing', 'moving', 'standing', 'sitting'
-      ],
-      environment: [
-        'building', 'office', 'room', 'interior', 'exterior', 'window', 'door', 'desk',
-        'workspace', 'hallway', 'lobby'
-      ],
-      time: ['morning', 'day', 'evening', 'deadline', 'time', 'period', 'moment'],
-      status: ['resignation', 'exit', 'change', 'transition', 'shift', 'movement']
-    };
-
-    const concepts = new Set<string>();
-    words.forEach(word => {
-      for (const [concept, terms] of Object.entries(conceptGroups)) {
-        if (terms.includes(word)) {
-          concepts.add(concept);
-          concepts.add(word);
-        }
-      }
-    });
-
-    return Array.from(concepts);
-  }
-
-  private getBroadConceptualTerms(concepts: string[], mood: string): string[] {
-    const terms = [...concepts];
-    
-    // Add context-preserving terms
-    const contextualTerms = [
-      'office environment',
-      'workplace',
-      'professional setting',
-      'business district',
-      'corporate building'
-    ];
-    
-    terms.push(...contextualTerms);
-    
-    const moodModifiers: Record<Mood, string[]> = {
-      dramatic: ['serious', 'impactful', 'significant'],
-      professional: ['formal', 'business', 'corporate'],
-      urgent: ['pressing', 'immediate', 'critical'],
-      reflective: ['thoughtful', 'contemplative', 'considered'],
-      inspirational: ['motivational', 'encouraging', 'positive']
-    };
-
-    if (moodModifiers[mood as Mood]) {
-      terms.push(...moodModifiers[mood as Mood]);
-    }
-
-    return terms;
-  }
-
-  private getVisualStyleTerms(visualType: string, mood: string): string[] {
-    const styleTerms: Record<VisualType, string[]> = {
-      'b-roll': [
-        'professional footage',
-        'office environment',
-        'corporate setting',
-        'business district',
-        'workplace scene'
-      ],
-      'static': [
-        'office interior',
-        'workplace setting',
-        'professional environment',
-        'corporate space'
-      ],
-      'talking': [
-        'professional person',
-        'office worker',
-        'business person',
-        'corporate employee'
-      ],
-      'overlay': [
-        'office background',
-        'corporate texture',
-        'business pattern',
-        'professional overlay'
-      ]
-    };
-
-    return [
-      ...(styleTerms[visualType as VisualType] || []),
-      'professional',
-      'business setting',
-      'high quality'
-    ];
-  }
-
-  private getActionTerms(description: string, visualType: string): string[] {
-    const actionWords = description.toLowerCase()
-      .match(/\b(walking|running|typing|working|standing|sitting|moving|looking)\b/g) || [];
-    
-    const genericActions: Record<VisualType, string[]> = {
-      'b-roll': ['motion', 'movement', 'activity'],
-      'static': ['stillness', 'presence'],
-      'talking': ['communication', 'interaction'],
-      'overlay': ['floating', 'overlaying']
-    };
-
-    return [
-      ...actionWords,
-      ...(genericActions[visualType as VisualType] || [])
-    ];
-  }
-
-  private getMoodTerms(mood: string, visualType: string): string[] {
-    const moodTerms: Record<Mood, string[]> = {
-      dramatic: ['intense', 'powerful', 'impactful'],
-      professional: ['formal', 'organized', 'structured'],
-      urgent: ['dynamic', 'energetic', 'quick'],
-      reflective: ['thoughtful', 'contemplative', 'serene'],
-      inspirational: ['uplifting', 'motivational', 'positive']
-    };
-
-    return [
-      ...(moodTerms[mood as Mood] || []),
-      visualType === 'b-roll' ? 'establishing' : '',
-      'atmosphere',
-      'mood'
-    ].filter(term => term);
-  }
-
   private generateSearchStrategies(scene: VideoScene): string[][] {
     const strategies: string[][] = [];
-    const context = this.extractScriptContext(scene);
     
-    // Extract key concepts from the scene description
-    const concepts = this.extractConcepts(scene.description);
+    // Strategy 1: Primary keywords - these are the most relevant for the scene
+    if (scene.primaryKeywords && scene.primaryKeywords.length > 0) {
+      strategies.push(scene.primaryKeywords);
+    }
     
-    // Strategy 1: Context-aware conceptual terms
-    const contextualTerms = [
-      context.domain,
-      context.setting,
-      ...this.getBroadConceptualTerms(concepts, scene.mood)
-    ];
-    strategies.push(contextualTerms);
+    // Strategy 2: Secondary keywords - alternative or supporting visuals
+    if (scene.secondaryKeywords && scene.secondaryKeywords.length > 0) {
+      strategies.push(scene.secondaryKeywords);
+    }
     
-    // Strategy 2: Professional setting with visual style
-    const professionalTerms = [
-      'professional',
-      'office',
-      'business',
-      context.mainTopic,
-      ...this.getVisualStyleTerms(scene.visualType, scene.mood)
-    ];
-    strategies.push(professionalTerms);
+    // Strategy 3: Combined primary and secondary keywords
+    if (scene.primaryKeywords && scene.primaryKeywords.length > 0 && 
+        scene.secondaryKeywords && scene.secondaryKeywords.length > 0) {
+      strategies.push([
+        ...scene.primaryKeywords.slice(0, 2),
+        ...scene.secondaryKeywords.slice(0, 2)
+      ]);
+    }
     
-    // Strategy 3: Action and environment
-    const actionTerms = [
-      ...this.getActionTerms(scene.description, scene.visualType),
-      context.setting,
-      'workplace'
-    ];
-    strategies.push(actionTerms);
+    // Strategy 4: Visual type specific fallback
+    const visualTypeKeywords = this.getVisualTypeKeywords(scene.visualType);
+    if (visualTypeKeywords.length > 0) {
+      strategies.push(visualTypeKeywords);
+    }
     
-    // Strategy 4: Mood and atmosphere in professional context
-    const moodTerms = [
-      ...this.getMoodTerms(scene.mood, scene.visualType),
-      'office',
-      'professional',
-      context.domain
-    ];
-    strategies.push(moodTerms);
-    
-    // Filter out empty arrays and deduplicate terms
+    // Filter out empty arrays and deduplicate terms within each strategy
     return strategies
       .filter(strategy => strategy.length > 0)
-      .map(strategy => Array.from(new Set(strategy)));
+      .map(strategy => Array.from(new Set(
+        strategy.map(term => term.toLowerCase())
+              .filter(term => term.length > 0)
+              .filter(term => !this.isPronouncedName(term))
+      )));
+  }
+
+  private getVisualTypeKeywords(visualType: string): string[] {
+    switch (visualType) {
+      case 'b-roll':
+        return ['footage', 'scene', 'action'];
+      case 'static':
+        return ['scene', 'environment'];
+      case 'talking':
+        return ['person', 'professional'];
+      case 'overlay':
+        return ['background', 'texture'];
+      default:
+        return [];
+    }
+  }
+
+  private isPronouncedName(term: string): boolean {
+    // List of common pronouns and name indicators to filter out
+    const nameIndicators = [
+      'he', 'she', 'they', 'his', 'her', 'their',
+      'mr', 'mrs', 'ms', 'dr', 'prof',
+      'president', 'ceo', 'director'
+    ];
+    
+    return nameIndicators.some(indicator => 
+      term.toLowerCase().includes(indicator.toLowerCase())
+    );
   }
 
   private generateFallbackStrategy(scene: VideoScene): string[] {
-    const context = this.extractScriptContext(scene);
     const fallbackTerms = new Set<string>();
     
-    // Add context-preserving terms
-    fallbackTerms.add(context.domain);
-    fallbackTerms.add('office');
-    fallbackTerms.add('professional');
-    fallbackTerms.add('business');
-    
-    // Add visual type related terms
-    if (scene.visualType === 'b-roll') {
-      fallbackTerms.add('office footage');
-      fallbackTerms.add('workplace scene');
-    } else {
-      fallbackTerms.add('office scene');
-      fallbackTerms.add('workplace');
+    // Try to use any remaining keywords that might work
+    if (scene.primaryKeywords && scene.primaryKeywords.length > 0) {
+      scene.primaryKeywords
+        .filter(term => !this.isPronouncedName(term))
+        .slice(0, 2)
+        .forEach(term => fallbackTerms.add(term.toLowerCase()));
     }
     
-    // Add mood-based term
-    fallbackTerms.add(scene.mood);
+    // Add visual type related terms as last resort
+    if (scene.visualType === 'b-roll') {
+      fallbackTerms.add('footage');
+      fallbackTerms.add('scene');
+    } else if (scene.visualType === 'static') {
+      fallbackTerms.add('scene');
+      fallbackTerms.add('environment');
+    } else if (scene.visualType === 'talking') {
+      fallbackTerms.add('person');
+      fallbackTerms.add('professional');
+    } else {
+      fallbackTerms.add('background');
+    }
     
     return Array.from(fallbackTerms);
   }
