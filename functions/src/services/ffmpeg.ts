@@ -453,9 +453,9 @@ export class FFmpegService {
     if (!fs.existsSync(captionsPath)) throw new Error('Captions file not found');
     
     const outputPath = this.tempFileManager.createTempFilePath('final', '.mp4');
-    // Increase voiceover volume and decrease background music volume
-    const voiceVolume = 1.5; // Increased from 1.0
-    const musicVolume = backgroundMusicPath ? 0.15 : 0; // Decreased from 0.3
+    // Adjust volume levels for better balance
+    const voiceVolume = 1.0;
+    const musicVolume = backgroundMusicPath ? 0.6 : 0;
 
     // Get voiceover duration
     const voiceoverDuration = await new Promise<number>((resolve, reject) => {
@@ -496,7 +496,28 @@ export class FFmpegService {
         // Build filter complex array with proper typing
         const filterComplex: FilterComplexEntry[] = [];
         
-        // Add video duration trim first
+        // First ensure all audio streams are at the same sample rate
+        filterComplex.push(
+            {
+                filter: 'aresample',
+                options: '48000',
+                inputs: '1:a',
+                outputs: ['voice_resampled']
+            }
+        );
+
+        if (backgroundMusicPath) {
+            filterComplex.push(
+                {
+                    filter: 'aresample',
+                    options: '48000',
+                    inputs: '2:a',
+                    outputs: ['music_resampled']
+                }
+            );
+        }
+
+        // Add video duration handling
         filterComplex.push({
             filter: 'trim',
             options: `duration=${voiceoverDuration}`,
@@ -513,13 +534,13 @@ export class FFmpegService {
         });
         
         if (backgroundMusicPath) {
-            // Enhanced audio processing for better voice clarity
+            // Enhanced audio processing chain
             filterComplex.push(
-                // Process voiceover with compression for consistent volume
+                // Process voiceover with properly escaped compand parameters
                 {
                     filter: 'compand',
-                    options: '0.3\\,1\\:1\\,1.5\\:-90/-900|-70/-70|-30/-9|0/-3\\:6\\:0\\:0\\:0',
-                    inputs: '1:a',
+                    options: '0.3\\,0.8\\:1\\,1.2\\:-90/-60\\|-60/-40\\|-40/-30\\|-30/-20\\:6\\:0\\:0\\:0',
+                    inputs: 'voice_resampled',
                     outputs: ['voice_compressed']
                 },
                 // Apply volume after compression
@@ -532,15 +553,15 @@ export class FFmpegService {
                 // Split voice stream for multiple uses
                 {
                     filter: 'asplit',
-                    options: '2',  // Split into 2 outputs
+                    options: '2',
                     inputs: 'voice_final',
                     outputs: ['voice_final_1', 'voice_final_2']
                 },
-                // Process background music with lowpass filter and volume
+                // Process background music
                 {
                     filter: 'lowpass',
-                    options: 'f=3000',
-                    inputs: '2:a',
+                    options: 'f=6000',
+                    inputs: 'music_resampled',
                     outputs: ['music_filtered']
                 },
                 {
@@ -549,70 +570,87 @@ export class FFmpegService {
                     inputs: 'music_filtered',
                     outputs: ['music_vol']
                 },
-                // Trim music to match voiceover duration
+                // Add fade out to music
                 {
-                    filter: 'atrim',
-                    options: `duration=${voiceoverDuration}`,
+                    filter: 'afade',
+                    options: `t=out:st=${voiceoverDuration-1}:d=1`,
                     inputs: 'music_vol',
-                    outputs: ['music_trimmed']
+                    outputs: ['music_faded']
                 },
-                // Sidechaining: Reduce music volume when voice is present
+                // Less aggressive sidechaining with proper sync
                 {
                     filter: 'sidechaincompress',
-                    options: {
-                        threshold: 0.03,
-                        ratio: 20,
-                        attack: 5,
-                        release: 50
-                    },
-                    inputs: ['music_trimmed', 'voice_final_1'],
+                    options: `threshold=0.12:ratio=4:attack=20:release=300`,
+                    inputs: ['music_faded', 'voice_final_1'],
                     outputs: ['music_ducked']
                 },
-                // Final mix
+                // Set channel layouts before merging
                 {
-                    filter: 'amix',
+                    filter: 'aformat',
+                    options: 'sample_fmts=fltp:channel_layouts=mono',
+                    inputs: 'voice_final_2',
+                    outputs: ['voice_formatted']
+                },
+                {
+                    filter: 'aformat',
+                    options: 'sample_fmts=fltp:channel_layouts=stereo',
+                    inputs: 'music_ducked',
+                    outputs: ['music_formatted']
+                },
+                // Final mix with proper sync
+                {
+                    filter: 'amerge',
                     options: {
-                        inputs: 2,
-                        duration: 'first',
-                        weights: '1.5 0.5'
+                        inputs: 2
                     },
-                    inputs: ['voice_final_2', 'music_ducked'],
+                    inputs: ['voice_formatted', 'music_formatted'],
+                    outputs: ['merged_audio']
+                },
+                // Ensure consistent audio levels
+                {
+                    filter: 'dynaudnorm',
+                    options: 'f=150:g=15',
+                    inputs: 'merged_audio',
                     outputs: ['final_audio']
                 }
             );
         } else {
-            // Simple voiceover processing when no background music
+            // Simple voiceover processing
             filterComplex.push(
                 {
                     filter: 'compand',
-                    options: '0.3\\,1\\:1\\,1.5\\:-90/-900|-70/-70|-30/-9|0/-3\\:6\\:0\\:0\\:0',
-                    inputs: '1:a',
+                    options: '0.3\\,0.8\\:1\\,1.2\\:-90/-60\\|-60/-40\\|-40/-30\\|-30/-20\\:6\\:0\\:0\\:0',
+                    inputs: 'voice_resampled',
                     outputs: ['voice_compressed']
                 },
                 {
                     filter: 'volume',
                     options: voiceVolume.toString(),
                     inputs: 'voice_compressed',
+                    outputs: ['voice_norm']
+                },
+                {
+                    filter: 'dynaudnorm',
+                    options: 'f=150:g=15',
+                    inputs: 'voice_norm',
                     outputs: ['final_audio']
                 }
             );
         }
 
-        // Clear any existing output options to prevent duplicates
-        command.outputOptions([]);
-
-        // Apply complex filter and map the outputs
+        // Apply complex filter and map the outputs with proper sync options
         command
             .complexFilter(filterComplex)
             .outputOptions([
-                '-map', '[subtitled]', // Map video with subtitles
-                '-map', '[final_audio]', // Map our mixed audio output
-                '-c:v', 'libx264', // Use H.264 codec for video
-                '-c:a', 'aac', // Use AAC for audio
-                '-b:a', '192k', // Audio bitrate
-                '-ac', '2', // Stereo audio
-                '-ar', '48000', // Audio sample rate
-                '-shortest', // Match shortest input duration
+                '-map', '[subtitled]',
+                '-map', '[final_audio]',
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                '-ac', '2',
+                '-ar', '48000',
+                '-vsync', '1',
+                '-async', '1',
                 '-max_muxing_queue_size', '1024',
                 '-movflags', '+faststart'
             ])

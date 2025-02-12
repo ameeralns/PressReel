@@ -280,18 +280,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\
     const colors = {
       dramatic: [
         { primaryColor: '&H00FFFFFF', outlineColor: '&H00000000', highlightColor: '&H00FFF000' }, // White/Black/Gold
-        { primaryColor: '&H00FFFFFF', outlineColor: '&H00333333', highlightColor: '&H00FF0000' }, // White/Dark Gray/Red
-        { primaryColor: '&H00F0F0F0', outlineColor: '&H00000000', highlightColor: '&H00FFFFFF' }  // Light Gray/Black/White
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00000000', highlightColor: '&H00FF0000' }  // White/Black/Red
       ],
       professional: [
-        { primaryColor: '&H00FFFFFF', outlineColor: '&H00222222', highlightColor: '&H00CCCCCC' }, // White/Dark Gray/Light Gray
-        { primaryColor: '&H00F8F8F8', outlineColor: '&H00333333', highlightColor: '&H00FFFFFF' }, // Off White/Dark Gray/White
-        { primaryColor: '&H00FFFFFF', outlineColor: '&H00000000', highlightColor: '&H00E0E0E0' }  // White/Black/Light Gray
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00000000', highlightColor: '&H00FFF000' }, // White/Black/Gold
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00000000', highlightColor: '&H00FF0000' }  // White/Black/Red
       ],
       casual: [
-        { primaryColor: '&H00FFFFFF', outlineColor: '&H00222222', highlightColor: '&H00FFF000' }, // White/Dark Gray/Gold
-        { primaryColor: '&H00F8F8F8', outlineColor: '&H00000000', highlightColor: '&H00FFFFFF' }, // Off White/Black/White
-        { primaryColor: '&H00FFFFFF', outlineColor: '&H00333333', highlightColor: '&H00E0E0E0' }  // White/Dark Gray/Light Gray
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00000000', highlightColor: '&H00FFF000' }, // White/Black/Gold
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00000000', highlightColor: '&H00FF0000' }  // White/Black/Red
       ]
     };
 
