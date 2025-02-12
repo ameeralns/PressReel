@@ -27,6 +27,7 @@ import { TempFileManager } from './utils/tempFileManager';
 import { Bucket } from '@google-cloud/storage';
 import path from 'path';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import * as functions from 'firebase-functions';
 
 // Configure port for Cloud Run
 const port = process.env.PORT || 8080;
@@ -433,9 +434,9 @@ export const fetchLatestNews = onSchedule({
     console.log('Starting scheduled news fetch...');
     
     // Validate API key
-    const currentsApiKey = process.env.CURRENTS_API_KEY;
+    const currentsApiKey = functions.config().currents.key;
     if (!currentsApiKey) {
-      throw new Error('Missing CURRENTS_API_KEY in environment variables');
+      throw new Error('Missing currents.key in Firebase Functions config');
     }
 
     // Fetch latest news
