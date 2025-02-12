@@ -161,7 +161,7 @@ export class WhisperService {
     const { primaryColor, outlineColor, highlightColor } = this.getColorsForTone();
     
     // Set vertical position and style based on tone
-    const { verticalPosition, isBold } = this.getStyleSettingsForTone();
+    const { verticalPosition, isBold, italic } = this.getStyleSettingsForTone();
 
     // ASS header with script info and randomized styles
     const header = `[Script Info]
@@ -172,7 +172,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${selectedFont},${selectedFontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,${isBold},0,0,0,100,100,0,0,1,${selectedOutline},0,8,10,10,${verticalPosition},1
+Style: Default,${selectedFont},${selectedFontSize},${primaryColor},&H000000FF,${outlineColor},&H80000000,${isBold},${italic},0,0,100,100,0,0,1,${selectedOutline},0,8,10,10,${verticalPosition},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
@@ -223,92 +223,124 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\
   private getFontsForTone(): string[] {
     switch (this.tone) {
       case 'dramatic':
-        return ['Impact', 'Arial Black', 'Helvetica Neue'];
+        return [
+          'Helvetica Neue',
+          'Arial Black',
+          'Montserrat',
+          'Roboto Condensed'
+        ];
       case 'professional':
-        return ['Arial', 'Helvetica', 'Roboto'];
+        return [
+          'Helvetica',
+          'Arial',
+          'Roboto',
+          'Open Sans',
+          'Source Sans Pro'
+        ];
       case 'casual':
-        return ['Verdana', 'Trebuchet MS', 'Helvetica Rounded'];
+        return [
+          'Helvetica',
+          'Verdana',
+          'Trebuchet MS',
+          'Avenir',
+          'Montserrat'
+        ];
       default:
-        return ['Arial', 'Helvetica'];
+        return ['Helvetica', 'Arial', 'Roboto'];
     }
   }
 
   private getFontSizesForTone(): number[] {
     switch (this.tone) {
       case 'dramatic':
-        return [64, 68, 72];
+        return [58, 62, 64];
       case 'professional':
-        return [54, 58, 62];
+        return [52, 54, 56];
       case 'casual':
-        return [58, 62, 66];
+        return [54, 56, 58];
       default:
-        return [60, 64];
+        return [54, 56];
     }
   }
 
   private getOutlineThicknessesForTone(): number[] {
     switch (this.tone) {
       case 'dramatic':
-        return [3, 3.5, 4];
-      case 'professional':
-        return [2, 2.5];
-      case 'casual':
         return [2.5, 3];
+      case 'professional':
+        return [2, 2.2];
+      case 'casual':
+        return [2.2, 2.5];
       default:
-        return [2.5];
+        return [2.2];
     }
   }
 
   private getColorsForTone(): { primaryColor: string; outlineColor: string; highlightColor: string } {
-    switch (this.tone) {
-      case 'dramatic':
-        return {
-          primaryColor: '&H00FFFFFF', // White
-          outlineColor: '&H00000000', // Black
-          highlightColor: '&H0000FFFF' // Bright cyan
-        };
-      case 'professional':
-        return {
-          primaryColor: '&H00F0F0F0', // Light gray
-          outlineColor: '&H00222222', // Dark gray
-          highlightColor: '&H00FFF000' // Yellow
-        };
-      case 'casual':
-        return {
-          primaryColor: '&H00FFE5CC', // Light peach
-          outlineColor: '&H00003300', // Dark green
-          highlightColor: '&H0000FF00' // Green
-        };
-      default:
-        return {
-          primaryColor: '&H00FFFFFF',
-          outlineColor: '&H00000000',
-          highlightColor: '&H00FFF000'
-        };
-    }
+    const colors = {
+      dramatic: [
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00000000', highlightColor: '&H00FFF000' }, // White/Black/Gold
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00333333', highlightColor: '&H00FF0000' }, // White/Dark Gray/Red
+        { primaryColor: '&H00F0F0F0', outlineColor: '&H00000000', highlightColor: '&H00FFFFFF' }  // Light Gray/Black/White
+      ],
+      professional: [
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00222222', highlightColor: '&H00CCCCCC' }, // White/Dark Gray/Light Gray
+        { primaryColor: '&H00F8F8F8', outlineColor: '&H00333333', highlightColor: '&H00FFFFFF' }, // Off White/Dark Gray/White
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00000000', highlightColor: '&H00E0E0E0' }  // White/Black/Light Gray
+      ],
+      casual: [
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00222222', highlightColor: '&H00FFF000' }, // White/Dark Gray/Gold
+        { primaryColor: '&H00F8F8F8', outlineColor: '&H00000000', highlightColor: '&H00FFFFFF' }, // Off White/Black/White
+        { primaryColor: '&H00FFFFFF', outlineColor: '&H00333333', highlightColor: '&H00E0E0E0' }  // White/Dark Gray/Light Gray
+      ]
+    };
+
+    const toneColors = colors[this.tone] || colors.professional;
+    return toneColors[Math.floor(Math.random() * toneColors.length)];
   }
 
-  private getStyleSettingsForTone(): { verticalPosition: number; isBold: number } {
+  private getStyleSettingsForTone(): { verticalPosition: number; isBold: number; italic: number; effects: string[] } {
+    const baseEffects = [
+      '\\fad(150,150)', // Subtle fade in/out
+      '\\blur1\\t(0,150,\\blur0)', // Subtle blur transition
+      '\\fscx105\\fscy105\\t(0,150,\\fscx100\\fscy100)' // Subtle scale transition
+    ];
+
     switch (this.tone) {
       case 'dramatic':
         return {
-          verticalPosition: 900, // Higher up for dramatic effect
-          isBold: 1
+          verticalPosition: 920,
+          isBold: 1,
+          italic: 0,
+          effects: [
+            '\\fad(200,200)',
+            '\\blur2\\t(0,200,\\blur0)',
+            '\\fscx110\\fscy110\\t(0,200,\\fscx100\\fscy100)'
+          ]
         };
       case 'professional':
         return {
-          verticalPosition: 960, // Standard position
-          isBold: 0
+          verticalPosition: 960,
+          isBold: 0,
+          italic: 0,
+          effects: [
+            '\\fad(150,150)',
+            '\\blur0.5\\t(0,100,\\blur0)'
+          ]
         };
       case 'casual':
         return {
-          verticalPosition: Math.floor(Math.random() * 200) + 800, // Random position
-          isBold: Math.random() > 0.5 ? 1 : 0
+          verticalPosition: 940,
+          isBold: Math.random() > 0.7 ? 1 : 0,
+          italic: 0,
+          effects: baseEffects
         };
       default:
         return {
           verticalPosition: 960,
-          isBold: 0
+          isBold: 0,
+          italic: 0,
+          effects: ['\\fad(150,150)']
         };
     }
   }
@@ -321,7 +353,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\
   ): boolean {
     switch (this.tone) {
       case 'dramatic':
-        return true; // Show one word at a time
+        return currentGroup.length >= 2 || isEndOfSentence || isLastWord; // Show two words at a time minimum
       case 'casual':
         return currentGroup.length >= 3 || isEndOfSentence || isBreathPause || isLastWord;
       case 'professional':
@@ -332,23 +364,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\
   }
 
   private generateTextWithEffects(currentGroup: WhisperWord[], highlightColor: string): string {
-    if (this.tone === 'dramatic') {
-      const dramaticEffects = [
-        '\\t(0,100,\\fscx120\\fscy120)\\t(100,200,\\fscx100\\fscy100)', // Quick punch in
-        '\\t(0,150,\\frz20)\\t(150,300,\\frz0)', // Rotate in
-        '\\t(0,100,\\fscx120\\fscy80)\\t(100,200,\\fscx100\\fscy100)', // Horizontal stretch
-        '\\t(0,150,\\blur5)\\t(150,300,\\blur0)', // Blur in
-        '\\fad(100,100)' // Quick fade
-      ];
-      const effect = dramaticEffects[Math.floor(Math.random() * dramaticEffects.length)];
-      const word = currentGroup[0]; // For dramatic, we only have one word
-      const duration = Math.round((word.end - word.start) * 100);
-      return `{\\k${duration}\\c${highlightColor}${effect}}${word.word}`;
-    } else {
-      return currentGroup.map(w => {
-        const duration = Math.round((w.end - w.start) * 100);
-        return `{\\k${duration}\\c${highlightColor}}${w.word}`;
-      }).join(' ');
-    }
+    const styleSettings = this.getStyleSettingsForTone();
+    const effect = styleSettings.effects[Math.floor(Math.random() * styleSettings.effects.length)];
+    
+    const words = currentGroup.map(w => {
+      const duration = Math.round((w.end - w.start) * 100);
+      return `{\\k${duration}\\c${highlightColor}}${w.word}`;
+    }).join(' ');
+
+    return `{${effect}}${words}`;
   }
 } 

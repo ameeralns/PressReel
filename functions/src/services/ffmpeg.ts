@@ -453,8 +453,9 @@ export class FFmpegService {
     if (!fs.existsSync(captionsPath)) throw new Error('Captions file not found');
     
     const outputPath = this.tempFileManager.createTempFilePath('final', '.mp4');
-    const voiceVolume = 1.0;
-    const musicVolume = backgroundMusicPath ? 0.3 : 0;
+    // Increase voiceover volume and decrease background music volume
+    const voiceVolume = 1.5; // Increased from 1.0
+    const musicVolume = backgroundMusicPath ? 0.15 : 0; // Decreased from 0.3
 
     // Get voiceover duration
     const voiceoverDuration = await new Promise<number>((resolve, reject) => {
@@ -512,41 +513,89 @@ export class FFmpegService {
         });
         
         if (backgroundMusicPath) {
-            // When we have background music, create a more complex mixing setup
+            // Enhanced audio processing for better voice clarity
             filterComplex.push(
+                // Process voiceover with compression for consistent volume
+                {
+                    filter: 'compand',
+                    options: '0.3\\,1\\:1\\,1.5\\:-90/-900|-70/-70|-30/-9|0/-3\\:6\\:0\\:0\\:0',
+                    inputs: '1:a',
+                    outputs: ['voice_compressed']
+                },
+                // Apply volume after compression
                 {
                     filter: 'volume',
                     options: voiceVolume.toString(),
-                    inputs: '1:a',
-                    outputs: ['voice']
+                    inputs: 'voice_compressed',
+                    outputs: ['voice_final']
+                },
+                // Split voice stream for multiple uses
+                {
+                    filter: 'asplit',
+                    options: '2',  // Split into 2 outputs
+                    inputs: 'voice_final',
+                    outputs: ['voice_final_1', 'voice_final_2']
+                },
+                // Process background music with lowpass filter and volume
+                {
+                    filter: 'lowpass',
+                    options: 'f=3000',
+                    inputs: '2:a',
+                    outputs: ['music_filtered']
                 },
                 {
                     filter: 'volume',
                     options: musicVolume.toString(),
-                    inputs: '2:a',
-                    outputs: ['music']
+                    inputs: 'music_filtered',
+                    outputs: ['music_vol']
                 },
+                // Trim music to match voiceover duration
                 {
                     filter: 'atrim',
                     options: `duration=${voiceoverDuration}`,
-                    inputs: 'music',
+                    inputs: 'music_vol',
                     outputs: ['music_trimmed']
                 },
+                // Sidechaining: Reduce music volume when voice is present
+                {
+                    filter: 'sidechaincompress',
+                    options: {
+                        threshold: 0.03,
+                        ratio: 20,
+                        attack: 5,
+                        release: 50
+                    },
+                    inputs: ['music_trimmed', 'voice_final_1'],
+                    outputs: ['music_ducked']
+                },
+                // Final mix
                 {
                     filter: 'amix',
-                    options: { inputs: 2, duration: 'first' },
-                    inputs: ['voice', 'music_trimmed'],
+                    options: {
+                        inputs: 2,
+                        duration: 'first',
+                        weights: '1.5 0.5'
+                    },
+                    inputs: ['voice_final_2', 'music_ducked'],
                     outputs: ['final_audio']
                 }
             );
         } else {
-            // Simple volume adjustment for voiceover only
-            filterComplex.push({
-                filter: 'volume',
-                options: voiceVolume.toString(),
-                inputs: '1:a',
-                outputs: ['final_audio']
-            });
+            // Simple voiceover processing when no background music
+            filterComplex.push(
+                {
+                    filter: 'compand',
+                    options: '0.3\\,1\\:1\\,1.5\\:-90/-900|-70/-70|-30/-9|0/-3\\:6\\:0\\:0\\:0',
+                    inputs: '1:a',
+                    outputs: ['voice_compressed']
+                },
+                {
+                    filter: 'volume',
+                    options: voiceVolume.toString(),
+                    inputs: 'voice_compressed',
+                    outputs: ['final_audio']
+                }
+            );
         }
 
         // Clear any existing output options to prevent duplicates
