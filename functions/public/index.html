@@ -72,6 +72,7 @@
     </select>
     <br>
     <button id="generateBtn">Generate Video</button>
+    <button id="cancelBtn" style="background-color: #dc3545; margin-left: 10px; display: none;">Cancel Generation</button>
     <div id="status"></div>
     <div id="debug"></div>
 
@@ -133,10 +134,45 @@
             // Hardcoded voice ID
             const VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
+            // Cancel button click handler
+            document.getElementById('cancelBtn').addEventListener('click', async () => {
+                const cancelBtn = document.getElementById('cancelBtn');
+                const generateBtn = document.getElementById('generateBtn');
+                const currentReelId = cancelBtn.dataset.reelId;
+
+                if (!currentReelId) {
+                    debugLog('No reel ID found for cancellation', null, 'error');
+                    return;
+                }
+
+                try {
+                    debugLog('Attempting to cancel reel generation', { reelId: currentReelId });
+                    cancelBtn.disabled = true;
+                    
+                    const cancelAiReel = firebase.functions().httpsCallable('cancelAiReel');
+                    const result = await cancelAiReel({ reelId: currentReelId });
+                    
+                    debugLog('Cancel request successful', result.data);
+                    updateStatus('Generation cancelled successfully', 'info');
+                    
+                    // Reset UI
+                    cancelBtn.style.display = 'none';
+                    generateBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                    cancelBtn.dataset.reelId = '';
+                    
+                } catch (error) {
+                    debugLog('Error cancelling reel generation', { error }, 'error');
+                    updateStatus('Failed to cancel: ' + error.message, 'error');
+                    cancelBtn.disabled = false;
+                }
+            });
+
             document.getElementById('generateBtn').addEventListener('click', async () => {
                 const script = document.getElementById('scriptInput').value;
                 const tone = document.getElementById('toneSelect').value;
                 const generateBtn = document.getElementById('generateBtn');
+                const cancelBtn = document.getElementById('cancelBtn');
 
                 debugLog('Generate button clicked', { script, tone });
                 updateStatus('Starting video generation...', 'info');
@@ -197,6 +233,11 @@
                     const reelRef = await db.collection('aiReels').add(reelData);
                     debugLog('Reel document created', { reelId: reelRef.id });
 
+                    // Show cancel button and store reel ID
+                    cancelBtn.dataset.reelId = reelRef.id;
+                    cancelBtn.style.display = 'inline-block';
+                    cancelBtn.disabled = false;
+
                     // Listen for updates
                     const unsubscribe = reelRef.onSnapshot(doc => {
                         const data = doc.data();
@@ -208,11 +249,13 @@
                             if (data.videoURL) {
                                 updateStatus(`Complete! Video available at: ${data.videoURL}`, 'success');
                                 generateBtn.disabled = false;
+                                cancelBtn.style.display = 'none';
                                 unsubscribe();
                             }
-                            if (data.status === 'failed') {
-                                updateStatus(`Failed: ${data.error || 'Unknown error'}`, 'error');
+                            if (data.status === 'failed' || data.status === 'cancelled') {
+                                updateStatus(`${data.status === 'cancelled' ? 'Cancelled' : 'Failed'}: ${data.error || 'Unknown error'}`, 'error');
                                 generateBtn.disabled = false;
+                                cancelBtn.style.display = 'none';
                                 unsubscribe();
                             }
                         }
@@ -220,12 +263,14 @@
                         debugLog('Error in snapshot listener', { error }, 'error');
                         updateStatus('Error in update listener: ' + error.message, 'error');
                         generateBtn.disabled = false;
+                        cancelBtn.style.display = 'none';
                     });
 
                 } catch (error) {
                     debugLog('Error in video generation', { error }, 'error');
                     updateStatus('Error: ' + error.message, 'error');
                     generateBtn.disabled = false;
+                    cancelBtn.style.display = 'none';
                 }
             });
         } catch (error) {

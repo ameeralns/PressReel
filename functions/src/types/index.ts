@@ -115,6 +115,7 @@ export interface PixabayMedia {
   width: number;
   height: number;
   localPath?: string; // Local temporary file path after download
+  isHorizontal?: boolean; // Whether the media is in horizontal format
 }
 
 export interface AiReel {

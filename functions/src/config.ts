@@ -12,6 +12,7 @@ console.log('Environment variables loaded:', {
   PIXABAY_API_KEY: !!process.env.PIXABAY_API_KEY,
   ELEVENLABS_API_KEY: !!process.env.ELEVENLABS_API_KEY,
   JAMENDO_API_KEY: !!process.env.JAMENDO_API_KEY,
+  PEXELS_API_KEY: !!process.env.PEXELS_API_KEY,
 });
 
 interface Config {
@@ -25,6 +26,9 @@ interface Config {
     apiKey: string;
   };
   jamendo: {
+    apiKey: string;
+  };
+  pexels: {
     apiKey: string;
   };
 }
@@ -42,6 +46,9 @@ const config: Config = {
   jamendo: {
     apiKey: process.env.JAMENDO_API_KEY || '',
   },
+  pexels: {
+    apiKey: process.env.PEXELS_API_KEY || '',
+  },
 };
 
 // Validate required environment variables
@@ -50,6 +57,7 @@ const requiredEnvVars = [
   { key: 'PIXABAY_API_KEY', value: config.pixabay.apiKey },
   { key: 'ELEVENLABS_API_KEY', value: config.elevenLabs.apiKey },
   { key: 'JAMENDO_API_KEY', value: config.jamendo.apiKey },
+  { key: 'PEXELS_API_KEY', value: config.pexels.apiKey },
 ];
 
 for (const { key, value } of requiredEnvVars) {

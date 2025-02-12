@@ -13,6 +13,7 @@ import * as admin from 'firebase-admin';
 import { DocumentSnapshot, FieldValue } from 'firebase-admin/firestore';
 import { VideoAnalysisService } from './services/videoAnalysis';
 import { PixabayService } from './services/pixabay';
+import { PexelsService } from './services/pexels';
 import { JamendoService } from './services/jamendo';
 import { ElevenLabsService } from './services/elevenLabs';
 import { WhisperService } from './services/whisper';
@@ -45,11 +46,11 @@ try {
 
 // Initialize services
 const videoAnalysis = new VideoAnalysisService();
-const pixabay = new PixabayService();
-const jamendo = new JamendoService();
 const elevenLabs = new ElevenLabsService();
-const whisper = new WhisperService();
+const pixabay = new PixabayService();
+const pexels = new PexelsService();
 const ffmpegService = new FFmpegService();
+const jamendo = new JamendoService();
 
 // Main function to handle reel generation
 export const generateAiReel = onDocumentCreated({
@@ -100,19 +101,36 @@ export const generateAiReel = onDocumentCreated({
     
     // 3. Generate captions
     console.log('📺 Generating captions...');
-    const captionsPath = await whisper.generateCaptions(voiceoverPath, reel.tone);
+    const whisper = new WhisperService(reel.tone);
+    const captionsPath = await whisper.generateCaptions(voiceoverPath);
     tempFileManager.trackFile(captionsPath);
     console.log('✅ Captions generated:', captionsPath);
     
-    // 4. Gather visuals and music
+    // 4. Gather visuals
     console.log('🎬 Gathering visuals...');
     await updateReelStatus(reelId, 'gatheringVisuals');
     const sceneMedia: SceneMedia[] = [];
     for (const scene of analysis.scenes) {
       console.log('🔍 Fetching media for scene:', scene);
-      const media = await pixabay.fetchMediaForScene(scene);
-      if (media) {
-        sceneMedia.push(media);
+      try {
+        // Try Pexels first
+        const media = await pexels.fetchMediaForScene(scene);
+        if (media) {
+          sceneMedia.push(media);
+          continue;
+        }
+      } catch (error) {
+        console.log('Pexels search failed, falling back to Pixabay:', error);
+        try {
+          // Fallback to Pixabay
+          const media = await pixabay.fetchMediaForScene(scene);
+          if (media) {
+            sceneMedia.push(media);
+          }
+        } catch (pixabayError) {
+          console.error('Both Pexels and Pixabay search failed:', pixabayError);
+          throw new Error(`Failed to fetch media for scene: ${scene.description}`);
+        }
       }
     }
     console.log('✅ All scene media gathered');

@@ -68,6 +68,35 @@ export class FFmpegService {
     }
   }
 
+  private getVerticalFormatFilter(width: number | undefined, height: number | undefined): string {
+    if (!width || !height) {
+      // Default to scaling if dimensions are unknown
+      return 'scale=1080:1920:force_original_aspect_ratio=decrease';
+    }
+    
+    if (width > height) {
+      // For horizontal videos/images:
+      // 1. Crop from center to 9:16 aspect ratio
+      // 2. Scale to 1080x1920
+      const cropWidth = Math.round(height * 9/16);
+      const xOffset = Math.round((width - cropWidth) / 2);
+      return `crop=${cropWidth}:${height}:${xOffset}:0,scale=1080:1920`;
+    } else {
+      // For vertical videos/images:
+      // 1. Crop to 9:16 aspect ratio if needed
+      // 2. Scale to 1080x1920
+      const targetHeight = Math.round(width * 16/9);
+      if (height > targetHeight) {
+        // Need to crop height to match 9:16
+        const yOffset = Math.round((height - targetHeight) / 2);
+        return `crop=${width}:${targetHeight}:0:${yOffset},scale=1080:1920`;
+      } else {
+        // Already correct aspect ratio or needs padding
+        return 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2';
+      }
+    }
+  }
+
   // Process a single scene
   private async processScene(
     mediaPath: string,
@@ -113,9 +142,7 @@ export class FFmpegService {
         // For images, handle differently than videos
         if (type === 'image') {
           // First scale to vertical format
-          filterParts.push('scale=1080:1920:force_original_aspect_ratio=decrease');
-          filterParts.push('pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black');
-          filterParts.push('format=yuv420p');
+          filterParts.push(this.getVerticalFormatFilter(metadata.streams[0].width, metadata.streams[0].height));
           
           if (scene.effect?.type === 'ken_burns') {
             filterParts.push(this.getEffectFilter(scene.effect));
@@ -123,12 +150,18 @@ export class FFmpegService {
             filterParts.push(this.getEffectFilter(scene.effect));
           }
           
-          filterParts.push('loop=loop=-1:size=1:start=0');
+          // For images, we need to generate enough frames for the full duration
+          filterParts.push(`loop=loop=-1:size=1:start=0`);
         } else {
-          // For videos, maintain the original chain
+          // For videos, apply vertical format and handle looping if needed
           filterParts.push('format=yuv420p');
-          filterParts.push('scale=1080:1920:force_original_aspect_ratio=decrease');
-          filterParts.push('pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black');
+          filterParts.push(this.getVerticalFormatFilter(metadata.streams[0].width, metadata.streams[0].height));
+          
+          // If video is shorter than needed duration, loop it
+          const videoDuration = metadata.format.duration || 0;
+          if (videoDuration < scene.duration) {
+            filterParts.push(`loop=loop=${Math.ceil(scene.duration / videoDuration)}:size=1:start=0`);
+          }
           
           if (scene.effect?.type) {
             const effectFilter = this.getEffectFilter(scene.effect);
@@ -159,6 +192,12 @@ export class FFmpegService {
         command
           .videoFilter(filterChain)
           .duration(scene.duration)
+          .outputOptions([
+            '-r', '25', // Ensure consistent framerate
+            '-vsync', '1', // Ensure A/V sync
+            '-shortest', // Don't loop beyond specified duration
+            '-avoid_negative_ts', 'make_zero' // Prevent negative timestamps
+          ])
           .on('start', cmd => console.log(`Processing scene ${index} command:`, cmd))
           .on('progress', progress => console.log(`Scene ${index} progress:`, progress))
           .on('stderr', stderrLine => console.log(`Scene ${index} stderr:`, stderrLine))
@@ -173,10 +212,10 @@ export class FFmpegService {
               return;
             }
 
-            // Verify output dimensions
+            // Verify output dimensions and duration
             ffmpeg.ffprobe(outputPath, (err, metadata) => {
               if (err) {
-                reject(new Error(`Failed to verify output dimensions for scene ${index}: ${err.message}`));
+                reject(new Error(`Failed to verify output for scene ${index}: ${err.message}`));
                 return;
               }
 
@@ -184,6 +223,12 @@ export class FFmpegService {
               if (!videoStream || videoStream.width !== 1080 || videoStream.height !== 1920) {
                 reject(new Error(`Scene ${index} output has incorrect dimensions: ${videoStream?.width}x${videoStream?.height}, expected 1080x1920`));
                 return;
+              }
+
+              // Verify duration matches expected duration
+              const actualDuration = metadata.format.duration || 0;
+              if (Math.abs(actualDuration - scene.duration) > 0.1) { // Allow 100ms tolerance
+                console.warn(`Scene ${index} duration mismatch: expected ${scene.duration}s, got ${actualDuration}s`);
               }
 
               resolve(outputPath);
@@ -310,7 +355,10 @@ export class FFmpegService {
           '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart',
           '-thread_queue_size', '512',
-          '-max_muxing_queue_size', '1024'
+          '-max_muxing_queue_size', '1024',
+          '-r', '25', // Ensure consistent framerate
+          '-vsync', '1', // Ensure A/V sync
+          '-avoid_negative_ts', 'make_zero' // Prevent negative timestamps
         ])
         .on('start', cmd => {
           console.log('Combining scenes command:', cmd);
@@ -325,7 +373,26 @@ export class FFmpegService {
           });
           reject(new Error(`Scene combination failed: ${err.message}`));
         })
-        .on('end', () => resolve(outputPath))
+        .on('end', () => {
+          // Verify the final output
+          ffmpeg.ffprobe(outputPath, (err, metadata) => {
+            if (err) {
+              reject(new Error(`Failed to verify combined output: ${err.message}`));
+              return;
+            }
+
+            const totalDuration = scenes.reduce((sum, scene) => sum + scene.duration, 0);
+            const actualDuration = metadata.format.duration || 0;
+            
+            console.log('Combined video duration check:', {
+              expected: totalDuration,
+              actual: actualDuration,
+              difference: Math.abs(actualDuration - totalDuration)
+            });
+
+            resolve(outputPath);
+          });
+        })
         .save(outputPath);
     });
   }
@@ -436,13 +503,10 @@ export class FFmpegService {
             outputs: ['trimmed']
         });
 
-        // Add subtitle filter after trimming
+        // Add ASS subtitle filter
         filterComplex.push({
-            filter: 'subtitles',
-            options: {
-                filename: captionsPath,
-                force_style: 'Fontsize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Bold=1'
-            },
+            filter: 'ass',
+            options: captionsPath,
             inputs: 'trimmed',
             outputs: ['subtitled']
         });
