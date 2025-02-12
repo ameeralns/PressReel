@@ -9,6 +9,8 @@ struct GenerateAiReelSheet: View {
     @State private var isGenerating = false
     @State private var audioPlayer: AVPlayer?
     @State private var isPlayingPreview = false
+    @State private var showProgressView = false
+    @State private var currentReelId: String?
     
     init(userId: String) {
         _viewModel = StateObject(wrappedValue: AiReelViewModel(userId: userId))
@@ -168,8 +170,10 @@ struct GenerateAiReelSheet: View {
                             isGenerating = true
                             Task {
                                 do {
-                                    try await viewModel.createReel(script: script)
-                                    dismiss()
+                                    viewModel.selectedTone = selectedTone
+                                    let reelId = try await viewModel.createReel(script: script)
+                                    currentReelId = reelId
+                                    showProgressView = true
                                 } catch {
                                     // Handle error
                                     isGenerating = false
@@ -212,6 +216,11 @@ struct GenerateAiReelSheet: View {
                     }
                     .foregroundColor(.white)
                 }
+            }
+        }
+        .fullScreenCover(isPresented: $showProgressView) {
+            if let reelId = currentReelId {
+                ReelProgressView(reelId: reelId)
             }
         }
         .onDisappear {

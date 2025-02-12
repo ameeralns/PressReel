@@ -27,13 +27,17 @@ import { TempFileManager } from './utils/tempFileManager';
 import { Bucket } from '@google-cloud/storage';
 import path from 'path';
 
+// Configure port for Cloud Run
+const port = process.env.PORT || 8080;
+process.env.PORT = port.toString();
+
 // Initialize Firebase Admin with explicit configuration
 try {
   if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.applicationDefault(),
       projectId: 'pressreel',
-      storageBucket: 'pressreel.appspot.com'
+      storageBucket: 'pressreel.firebasestorage.app'
     });
     console.log('✅ Firebase Admin initialized successfully');
   } else {
@@ -53,10 +57,11 @@ const ffmpegService = new FFmpegService();
 const jamendo = new JamendoService();
 
 // Main function to handle reel generation
-export const generateAiReel = onDocumentCreated({
+export const generateAiReelV2 = onDocumentCreated({
   document: 'aiReels/{reelId}',
-  timeoutSeconds: 540,
-  memory: '2GiB'
+  memory: '1GiB', // Increase memory allocation
+  timeoutSeconds: 540, // Set timeout to 9 minutes (max is 540s)
+  region: 'us-central1' // Specify region for better performance
 }, async (event) => {
   console.log('🚀 generateAiReel function triggered');
   
@@ -356,10 +361,7 @@ async function uploadToStorage(
 }
 
 // Function to handle reel cancellation
-export const cancelAiReel = onCall({
-  timeoutSeconds: 60,
-  memory: '256MiB'
-}, async (request) => {
+export const cancelAiReelV2 = onCall(async (request) => {
   // Ensure user is authenticated
   if (!request.auth) {
     throw new Error('User must be authenticated');
@@ -405,10 +407,7 @@ export const cancelAiReel = onCall({
 });
 
 // Function to fetch ElevenLabs voices
-export const getElevenLabsVoices = onCall({
-  timeoutSeconds: 60,
-  memory: '256MiB'
-}, async () => {
+export const getElevenLabsVoicesV2 = onCall(async () => {
   console.log('Cloud Function: getElevenLabsVoices started');
   try {
     console.log('Calling ElevenLabs service getVoices method');

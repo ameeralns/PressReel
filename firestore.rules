@@ -48,22 +48,15 @@ service cloud.firestore {
       // Allow reading scripts only if the user is authenticated and owns the script
       allow read: if request.auth != null && resource.data.userId == request.auth.uid;
       
-      // Allow creating scripts only if:
-      // 1. User is authenticated
-      // 2. They're setting their own userId
-      // 3. The script has all required fields
-      allow create: if request.auth != null 
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.keys().hasAll(['id', 'userId', 'newsItemId', 'content', 'createdAt', 'title', 'duration'])
-        && request.resource.data.duration == 60;  // Ensure it's a 1-minute script
+      // Allow creating scripts if user is authenticated and setting their own userId
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
       
       // Allow updating scripts only if:
       // 1. User owns the script
-      // 2. They're not changing the userId or newsItemId
+      // 2. They're not changing the userId
       allow update: if request.auth != null 
         && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == resource.data.userId
-        && request.resource.data.newsItemId == resource.data.newsItemId;
+        && request.resource.data.userId == resource.data.userId;
       
       // Allow deleting scripts only if user owns the script
       allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
