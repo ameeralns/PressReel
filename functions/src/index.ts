@@ -192,8 +192,8 @@ export const generateAiReel = onDocumentCreated({
     
     // Upload video and thumbnail
     const [videoURL, thumbnailURL] = await Promise.all([
-      uploadToStorage(bucket, videoPath, `reels/${reelId}/final.mp4`, 'video/mp4'),
-      uploadToStorage(bucket, thumbnailPath, `reels/${reelId}/thumbnail.jpg`, 'image/jpeg')
+      uploadToStorage(bucket, videoPath, `users/${reel.userId}/reels/${reelId}/final.mp4`, 'video/mp4'),
+      uploadToStorage(bucket, thumbnailPath, `users/${reel.userId}/reels/${reelId}/thumbnail.jpg`, 'image/jpeg')
     ]);
     
     // Update reel document with completion
