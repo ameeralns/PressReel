@@ -332,25 +332,36 @@ export class FFmpegService {
 
   private buildTransitionFilter(scenes: VideoScene[], transitionDuration: number): { filter: string[], output: string } {
     if (scenes.length === 1) {
-      return { filter: [], output: '0:v' };
+        return { filter: [], output: '0:v' };
     }
 
     const filters: string[] = [];
     let lastOutput = '0:v';
+    let cumulativeOffset = 0;
     
     for (let i = 1; i < scenes.length; i++) {
-      const inputLabel = `${i}:v`;
-      const outputLabel = `v${i}`;
-      const transitionType = scenes[i - 1].transition?.type || 'fade';
-      const transition = this.getFFmpegTransition(transitionType);
-      
-      filters.push(`[${lastOutput}][${inputLabel}]xfade=transition=${transition}:duration=${transitionDuration}:offset=${transitionDuration}[${outputLabel}]`);
-      lastOutput = outputLabel;
+        const inputLabel = `${i}:v`;
+        const outputLabel = `v${i}`;
+        const transitionType = scenes[i - 1].transition?.type || 'fade';
+        const transition = this.getFFmpegTransition(transitionType);
+        
+        // Calculate cumulative offset based on previous scene duration
+        cumulativeOffset += scenes[i - 1].duration - transitionDuration;
+        
+        console.log(`Scene ${i} transition:`, {
+            previousDuration: scenes[i - 1].duration,
+            transitionDuration,
+            cumulativeOffset,
+            transition
+        });
+        
+        filters.push(`[${lastOutput}][${inputLabel}]xfade=transition=${transition}:duration=${transitionDuration}:offset=${cumulativeOffset}[${outputLabel}]`);
+        lastOutput = outputLabel;
     }
 
     return {
-      filter: filters,
-      output: lastOutput
+        filter: filters,
+        output: lastOutput
     };
   }
 
@@ -393,8 +404,6 @@ export class FFmpegService {
         command = command.input(backgroundMusicPath);
       }
 
-      command = command.input(captionsPath);
-
       // Define type for filter complex
       type FilterComplexEntry = {
         filter: string;
@@ -405,6 +414,17 @@ export class FFmpegService {
 
       // Build filter complex array with proper typing
       const filterComplex: FilterComplexEntry[] = [];
+      
+      // Add subtitle filter first
+      filterComplex.push({
+        filter: 'subtitles',
+        options: {
+          filename: captionsPath,
+          force_style: 'Fontsize=24,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Bold=1'
+        },
+        inputs: '0:v',
+        outputs: ['subtitled']
+      });
       
       if (backgroundMusicPath) {
         // When we have background music, create a more complex mixing setup
@@ -441,13 +461,13 @@ export class FFmpegService {
       // Clear any existing output options to prevent duplicates
       command.outputOptions([]);
 
-      // Apply complex filter without specifying output labels (they'll be mapped in outputOptions)
+      // Apply complex filter and map the outputs
       command
         .complexFilter(filterComplex)
         .outputOptions([
-          '-map', '0:v', // Map video from first input
+          '-map', '[subtitled]', // Map video with subtitles
           '-map', '[final_audio]', // Map our mixed audio output
-          '-c:v', 'copy', // Copy video codec
+          '-c:v', 'libx264', // Use H.264 codec for video
           '-c:a', 'aac', // Use AAC for audio
           '-b:a', '192k', // Audio bitrate
           '-ac', '2', // Stereo audio
