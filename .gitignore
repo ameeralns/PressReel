@@ -92,8 +92,15 @@ Carthage/Build/
 **/config.json
 **/*.env
 **/*.secret
+**/.env
 
 # Prevent accidental commits of any files with API keys
 **/api_key*
 **/*key.txt
 **/*secret*
+
+# Firebase debug logs
+*-debug.log
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

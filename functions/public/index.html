@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Reel Generator</title>
+    <script>
+        alert('JavaScript is loading!');
+    </script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-functions-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <style>
+        body { 
+            margin: 20px; 
+            font-family: Arial, sans-serif;
+        }
+        textarea { 
+            width: 100%; 
+            height: 100px; 
+            margin: 10px 0; 
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        select { 
+            margin: 10px 0;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        button { 
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #debug { 
+            margin-top: 20px; 
+            padding: 10px; 
+            background: #f5f5f5; 
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace; 
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success { background-color: #dff0d8; color: #3c763d; }
+        .error { background-color: #f2dede; color: #a94442; }
+        .info { background-color: #d9edf7; color: #31708f; }
+    </style>
+</head>
+<body>
+    <textarea id="scriptInput" placeholder="Enter script">This news is set to last until the end of the season, and fans are buzzing about what Felix will bring to the Rossoneri.</textarea>
+    <br>
+    <select id="toneSelect">
+        <option value="">Select tone...</option>
+        <option value="professional">Professional</option>
+        <option value="casual">Casual</option>
+        <option value="dramatic">Dramatic</option>
+    </select>
+    <br>
+    <button id="generateBtn">Generate Video</button>
+    <div id="status"></div>
+    <div id="debug"></div>
+
+    <script>
+        console.log('SCRIPT TAG IS RUNNING');
+        alert('Main script is starting!');
+
+        // Debug logging function
+        function debugLog(message, data = null, level = 'info') {
+            const debug = document.getElementById('debug');
+            const timestamp = new Date().toISOString();
+            const prefix = level.toUpperCase().padEnd(5);
+            const logMessage = data 
+                ? `[${timestamp}] ${prefix} ${message}\n${JSON.stringify(data, null, 2)}\n`
+                : `[${timestamp}] ${prefix} ${message}\n`;
+            
+            debug.textContent = logMessage + debug.textContent; // Prepend new messages
+            console.log(`${prefix} ${message}`, data || '');
+        }
+
+        // Status update function
+        function updateStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = type;
+        }
+
+        try {
+            // Initialize Firebase with emulator
+            debugLog('Initializing Firebase');
+            firebase.initializeApp({
+                apiKey: "demo-key-no-need-for-real-key-with-emulator",
+                authDomain: "pressreel.firebaseapp.com",
+                projectId: "pressreel",
+                storageBucket: "pressreel.appspot.com"
+            });
+            const db = firebase.firestore();
+            const functions = firebase.functions();
+            const auth = firebase.auth();
+            
+            // Connect to emulators
+            debugLog('Connecting to emulators');
+            db.useEmulator('localhost', 8081);
+            functions.useEmulator('localhost', 5001);
+            auth.useEmulator('http://localhost:9099');
+
+            // Sign in anonymously on page load
+            debugLog('Attempting anonymous sign in');
+            auth.signInAnonymously()
+                .then(cred => {
+                    debugLog('Anonymous sign in successful', { uid: cred.user.uid });
+                    updateStatus('Ready to generate video', 'success');
+                })
+                .catch(error => {
+                    debugLog('Anonymous sign in failed', { error }, 'error');
+                    updateStatus('Authentication failed: ' + error.message, 'error');
+                });
+
+            // Hardcoded voice ID
+            const VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+
+            document.getElementById('generateBtn').addEventListener('click', async () => {
+                const script = document.getElementById('scriptInput').value;
+                const tone = document.getElementById('toneSelect').value;
+                const generateBtn = document.getElementById('generateBtn');
+
+                debugLog('Generate button clicked', { script, tone });
+                updateStatus('Starting video generation...', 'info');
+                generateBtn.disabled = true;
+
+                if (!script || !tone) {
+                    const error = 'Please fill all fields';
+                    debugLog('Validation failed', { error }, 'error');
+                    updateStatus(error, 'error');
+                    generateBtn.disabled = false;
+                    return;
+                }
+
+                try {
+                    const user = auth.currentUser;
+                    if (!user) {
+                        debugLog('No authenticated user found', null, 'error');
+                        await auth.signInAnonymously();
+                        debugLog('Signed in anonymously after error');
+                    }
+                    
+                    if (!auth.currentUser) {
+                        throw new Error('Still not authenticated after retry');
+                    }
+                    debugLog('User authenticated', { uid: auth.currentUser.uid });
+
+                    // Create script document
+                    const scriptId = 'test-script-' + Date.now();
+                    debugLog('Creating script document', { scriptId });
+                    
+                    const scriptData = {
+                        id: scriptId,
+                        userId: auth.currentUser.uid,
+                        newsItemId: 'test-news-' + Date.now(),
+                        content: script,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        title: 'Test Script',
+                        duration: 60
+                    };
+                    debugLog('Script data prepared', scriptData);
+                    
+                    await db.collection('scripts').doc(scriptId).set(scriptData);
+                    debugLog('Script document created successfully');
+
+                    // Create reel document
+                    const reelData = {
+                        scriptId: scriptId,
+                        voiceId: VOICE_ID,
+                        tone: tone,
+                        status: 'processing',
+                        progress: 0,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        userId: auth.currentUser.uid
+                    };
+                    debugLog('Creating reel with data', reelData);
+                    
+                    const reelRef = await db.collection('aiReels').add(reelData);
+                    debugLog('Reel document created', { reelId: reelRef.id });
+
+                    // Listen for updates
+                    const unsubscribe = reelRef.onSnapshot(doc => {
+                        const data = doc.data();
+                        debugLog('Reel update received', data);
+                        if (data) {
+                            const statusText = `Status: ${data.status} (${Math.round(data.progress * 100)}%)`;
+                            updateStatus(statusText, 'info');
+                            
+                            if (data.videoURL) {
+                                updateStatus(`Complete! Video available at: ${data.videoURL}`, 'success');
+                                generateBtn.disabled = false;
+                                unsubscribe();
+                            }
+                            if (data.status === 'failed') {
+                                updateStatus(`Failed: ${data.error || 'Unknown error'}`, 'error');
+                                generateBtn.disabled = false;
+                                unsubscribe();
+                            }
+                        }
+                    }, error => {
+                        debugLog('Error in snapshot listener', { error }, 'error');
+                        updateStatus('Error in update listener: ' + error.message, 'error');
+                        generateBtn.disabled = false;
+                    });
+
+                } catch (error) {
+                    debugLog('Error in video generation', { error }, 'error');
+                    updateStatus('Error: ' + error.message, 'error');
+                    generateBtn.disabled = false;
+                }
+            });
+        } catch (error) {
+            console.error('Fatal error:', error);
+            debugLog('Fatal initialization error', { error }, 'error');
+            updateStatus('Fatal error: ' + error.message, 'error');
+        }
+    </script>
+</body>
+</html> 
