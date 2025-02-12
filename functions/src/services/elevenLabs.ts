@@ -65,9 +65,9 @@ export class ElevenLabsService {
     switch (tone) {
       case 'professional':
         return {
-          stability: 0.85, // More stable for professional tone
-          similarity_boost: 0.75,
-          style: 0.15, // Subtle style variation
+          stability: 0.95, // Higher stability for clear, consistent news delivery
+          similarity_boost: 0.85, // Higher similarity for more authentic voice
+          style: 0.35, // Moderate style for news-like inflection
           use_speaker_boost: true
         };
       case 'casual':
@@ -79,9 +79,9 @@ export class ElevenLabsService {
         };
       case 'dramatic':
         return {
-          stability: 0.55, // More variations for dramatic effect
-          similarity_boost: 0.85,
-          style: 0.65, // Strong style for dramatic impact
+          stability: 0.45, // Lower stability for more dynamic range and energy
+          similarity_boost: 0.90, // Higher similarity to maintain voice quality while being dramatic
+          style: 0.85, // Much stronger style for maximum hype and energy
           use_speaker_boost: true
         };
       default:
